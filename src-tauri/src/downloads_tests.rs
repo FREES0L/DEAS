@@ -141,7 +141,11 @@ fn strict_catalog_and_extension() {
             .len(),
         15 + 35
     );
-    let dials = c.entries.iter().find(|e| e.id == "matlowai-h3-dials").unwrap();
+    let dials = c
+        .entries
+        .iter()
+        .find(|e| e.id == "matlowai-h3-dials")
+        .unwrap();
     assert_eq!(dials.provider_id, "huggingface");
     assert_eq!(dials.locator, "models:MATLOWAI/H3-Dials");
     assert_eq!(dials.target, "dials");
