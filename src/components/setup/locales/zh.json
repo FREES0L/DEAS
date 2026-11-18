@@ -114,6 +114,7 @@
   "setup.request.features": "选定能力（确切 ID）",
   "setup.summary.capabilities": "已选择 {count} 项",
   "setup.detectedNvidia": "已检测到 NVIDIA",
+  "setup.detectedAmd": "已检测到 AMD",
   "setup.detectionError": "硬件检测不可用",
   "setup.feature.output.label": "输出",
   "setup.feature.output.description": "套件包含的视觉输出能力，并非独立的原生安装功能。",

@@ -114,6 +114,7 @@
   "setup.request.features": "Seçilen özellikler (kesin kimlikler)",
   "setup.summary.capabilities": "{count} seçildi",
   "setup.detectedNvidia": "NVIDIA algılandı",
+  "setup.detectedAmd": "AMD algılandı",
   "setup.detectionError": "Donanım algılama kullanılamıyor",
   "setup.feature.output.label": "Output",
   "setup.feature.output.description": "Pakete dahil görsel çıktı özelliği; bağımsız bir yerel kurulum özelliği değildir.",

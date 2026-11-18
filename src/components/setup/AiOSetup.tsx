@@ -174,7 +174,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   defaultsRequest.current??=invoke<NativeInstallDefaults>('native_install_defaults',{});
   void defaultsRequest.current.then(result=>{
    if(!alive)return;
-   if(!result||typeof result.storagePath!=='string'||!['cpu','nvidia'].includes(result.backend)||!Array.isArray(result.warnings)){setDetectionError(t('setup.defaultsInvalid'));return;}
+   if(!result||typeof result.storagePath!=='string'||!['cpu','nvidia','amd'].includes(result.backend)||!Array.isArray(result.warnings)){setDetectionError(t('setup.defaultsInvalid'));return;}
    setDefaults(result);
    setState(s=>{
     if(defaultsLocked.current)return s;
@@ -364,7 +364,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   {/* Once opened, the Studio stays mounted (hidden) so its panels keep their state across tab switches. */}
   {studioVisited.current&&<div className="aio-studio-host" hidden={view!=='studio'}><OpenComfyWorkflow.Provider value={comfyEndpoint?openWorkflow:null}>{studio}</OpenComfyWorkflow.Provider></div>}
   {inBackend&&installedRoot&&<section className="aio-detail" aria-label={t('setup.environmentFolder')}><h3>{t('setup.environmentFolder')}</h3><p style={{overflowWrap:'anywhere'}}><code>{installedRoot}</code></p><button type="button" disabled={!native||running||busy} onClick={()=>{setTechnicalError('');void invoke('native_media_reveal',{path:installedRoot}).catch(e=>setTechnicalError(String(e)));}}>{t('setup.openEnvironmentFolder')}</button> <button type="button" disabled={!native||running||busy||pickerBusy} title={t('setup.moveEnvironmentHelp')} onClick={()=>void pickMoveTarget()}>{t('setup.moveEnvironment')}</button>{moving&&<p role="status"><span className="aio-spinner" aria-hidden="true"/>{t('setup.moveEnvironmentBusy')}</p>}{moveNotice&&<p role="status">{moveNotice}</p>}</section>}
-  {inBackend&&review&&defaults&&!status&&<div className="aio-help aio-detection" role="status"><p>{t(defaults.backend==='nvidia'?'setup.detectedNvidia':'setup.cpuRecommendation')}</p><p>{t('setup.autoFindings')}</p>{typeof defaults.hardware?.name==='string'&&<p>{String(defaults.hardware.name)}</p>}{defaults.warnings.length>0&&<ul>{defaults.warnings.map((w,i)=><li key={i}>{w}</li>)}</ul>}</div>}
+  {inBackend&&review&&defaults&&!status&&<div className="aio-help aio-detection" role="status"><p>{t(defaults.backend==='nvidia'?'setup.detectedNvidia':defaults.backend==='amd'?'setup.detectedAmd':'setup.cpuRecommendation')}</p><p>{t('setup.autoFindings')}</p>{typeof defaults.hardware?.name==='string'&&<p>{String(defaults.hardware.name)}</p>}{defaults.warnings.length>0&&<ul>{defaults.warnings.map((w,i)=><li key={i}>{w}</li>)}</ul>}</div>}
   {view==='logs'&&<LogsPanel/>}
   {inBackend&&<LanguageSetting/>}
   {inBackend&&!installed&&<button type="button" data-upgrade disabled={!native||running||busy} onClick={()=>setConfirmUpgrade(true)}>{t('setup.upgrade')}</button>}

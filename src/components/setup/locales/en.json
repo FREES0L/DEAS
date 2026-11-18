@@ -114,6 +114,7 @@
   "setup.request.features": "Selected capabilities (exact IDs)",
   "setup.summary.capabilities": "{count} selected",
   "setup.detectedNvidia": "NVIDIA detected",
+  "setup.detectedAmd": "AMD detected",
   "setup.detectionError": "Hardware detection unavailable",
   "setup.feature.output.label": "Output",
   "setup.feature.output.description": "Included visual output capability, not an independent native install feature.",

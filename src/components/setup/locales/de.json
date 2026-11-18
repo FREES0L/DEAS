@@ -114,6 +114,7 @@
   "setup.request.features": "Gewählte Fähigkeiten (exakte IDs)",
   "setup.summary.capabilities": "{count} gewählt",
   "setup.detectedNvidia": "NVIDIA erkannt",
+  "setup.detectedAmd": "AMD erkannt",
   "setup.detectionError": "Hardware-Erkennung nicht verfügbar",
   "setup.feature.output.label": "Ausgabe",
   "setup.feature.output.description": "Enthaltene visuelle Ausgabefähigkeit, keine eigenständige native Installationsfunktion.",

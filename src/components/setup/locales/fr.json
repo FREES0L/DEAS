@@ -114,6 +114,7 @@
   "setup.request.features": "Fonctionnalités sélectionnées (identifiants exacts)",
   "setup.summary.capabilities": "Sélection : {count}",
   "setup.detectedNvidia": "NVIDIA détecté",
+  "setup.detectedAmd": "AMD détecté",
   "setup.detectionError": "Détection matérielle indisponible",
   "setup.feature.output.label": "Output",
   "setup.feature.output.description": "Fonctionnalité de sortie visuelle incluse, et non fonctionnalité d’installation native indépendante.",

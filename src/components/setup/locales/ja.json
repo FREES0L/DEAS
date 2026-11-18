@@ -114,6 +114,7 @@
   "setup.request.features": "選択した機能（正確な ID）",
   "setup.summary.capabilities": "{count} 件選択済み",
   "setup.detectedNvidia": "NVIDIA を検出",
+  "setup.detectedAmd": "AMD を検出",
   "setup.detectionError": "ハードウェア検出を利用できません",
   "setup.feature.output.label": "Output",
   "setup.feature.output.description": "パッケージに含まれる映像出力機能で、独立したネイティブインストール項目ではありません。",
