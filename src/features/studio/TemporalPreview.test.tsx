@@ -1,14 +1,17 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { TemporalPreview } from './TemporalPreview';
-import { nativeVideo } from './NativeVideo';
+import { nativeVideo, type NativeVideo, type NativeVideoStatus } from './NativeVideo';
+import type { ComponentProps } from 'react';
 import type { TemporalPreviewData } from '../../lib/jobs';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true)}));
-vi.mock('./NativeVideo',()=>({nativeVideo:vi.fn(()=>false),NativeVideo:vi.fn(({label,source,active,muted,loop,resume,onStatus}:any)=>{emitStatus=onStatus;return <div aria-label={label} data-source={JSON.stringify(source)} data-active={active} data-muted={muted} data-loop={loop} data-resume={resume===undefined?'':String(resume)}/>;})}));
-let emitStatus:((status:object)=>void)|undefined;
+vi.mock('./NativeVideo',()=>({nativeVideo:vi.fn(()=>false),NativeVideo:vi.fn(({label,source,muted,loop,onStatus}:ComponentProps<typeof NativeVideo>)=>{emitStatus=onStatus;return <div aria-label={label} data-source={JSON.stringify(source)} data-muted={muted} data-loop={!!loop}/>;})}));
+let emitStatus:((status:NativeVideoStatus)=>void)|undefined;
+const nativeStatus={position:12,duration:14,paused:false,muted:true,volume:0,width:32,height:32};
 const frames:TemporalPreviewData={revision:1,nodeId:'node',width:32,height:32,fps:8,frames:[{src:'data:image/png;base64,red',durationMs:125},{src:'data:image/png;base64,blue',durationMs:125}]};
 const video:TemporalPreviewData={revision:1,nodeId:'node',width:32,height:32,fps:8,video:{previewJobId:'job',previewRevision:1}};
+const videoRevision=(revision:number):TemporalPreviewData=>({...video,revision,video:{previewJobId:'job',previewRevision:revision}});
 let draw:ReturnType<typeof vi.fn>, callbacks:FrameRequestCallback[];
 beforeEach(()=>{
  vi.clearAllMocks(); vi.mocked(nativeVideo).mockReturnValue(false); vi.mocked(isTauri).mockReturnValue(true);
@@ -29,11 +32,12 @@ describe('TemporalPreview',()=>{
   rerender(<TemporalPreview preview={frames} active={false} label="preview"/>);
   expect(cancelAnimationFrame).toHaveBeenCalled();
  });
- it('uses the native muted looping player on Linux, never HTML video',()=>{
+ it('uses the native muted player on Linux, without looping',()=>{
   vi.mocked(nativeVideo).mockReturnValue(true);
   const {container}=render(<TemporalPreview preview={video} active label="preview"/>);
   expect(container.querySelector('video')).toBeNull();
   expect(screen.getByLabelText('preview').getAttribute('data-muted')).toBe('true');
+  expect(screen.getByLabelText('preview').getAttribute('data-loop')).toBe('false');
   expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(video.video));
   expect(invoke).not.toHaveBeenCalled();
  });
@@ -41,8 +45,8 @@ describe('TemporalPreview',()=>{
   vi.mocked(invoke).mockResolvedValue('data:video/mp4;base64,fixture');
   const {container,rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
   await waitFor(()=>expect(container.querySelector('video')).not.toBeNull());
-  const player=container.querySelector('video')!;expect(player.muted).toBe(true);expect(player.loop).toBe(true);
-  expect(invoke).toHaveBeenCalledWith('native_video_open',expect.objectContaining({source:video.video,muted:true,repeat:true}));
+  const player=container.querySelector('video')!;expect(player.muted).toBe(true);expect(player.loop).toBe(false);
+  expect(invoke).toHaveBeenCalledWith('native_video_open',expect.objectContaining({source:video.video,muted:true,repeat:false}));
   rerender(<TemporalPreview preview={video} active={false} label="preview"/>);expect(container.querySelector('video')).toBeNull();
  });
  it('falls back on a failed open, reports through the typed shared-log seam and recovers on the next revision',async()=>{
@@ -54,22 +58,48 @@ describe('TemporalPreview',()=>{
   await waitFor(()=>expect(callbacks).toHaveLength(1));act(()=>callbacks.shift()!(0));
   expect(container.querySelector('canvas')).not.toBeNull();expect(draw).toHaveBeenCalled();
  });
- it('resumes a growing video preview at the watched position instead of restarting from zero',()=>{
+ it('waits for native EOF and then selects the latest revision',()=>{
   vi.mocked(nativeVideo).mockReturnValue(true);
   const {rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
-  act(()=>emitStatus!({position:12,duration:14,paused:false,muted:true,volume:0,width:32,height:32}));
-  rerender(<TemporalPreview preview={{...video,revision:2,video:{previewJobId:'job',previewRevision:2}}} active label="preview"/>);
-  expect(screen.getByLabelText('preview').getAttribute('data-resume')).toBe('12');
-  // The reopen dip to 0 must not erase the remembered position.
-  act(()=>emitStatus!({position:0,duration:16,paused:false,muted:true,volume:0,width:32,height:32}));
-  rerender(<TemporalPreview preview={{...video,revision:3,video:{previewJobId:'job',previewRevision:3}}} active label="preview"/>);
-  expect(screen.getByLabelText('preview').getAttribute('data-resume')).toBe('12');
+  act(()=>emitStatus!({...nativeStatus,ended:false}));
+  rerender(<TemporalPreview preview={videoRevision(2)} active label="preview"/>);
+  rerender(<TemporalPreview preview={videoRevision(3)} active label="preview"/>);
+  expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(video.video));
+  act(()=>emitStatus!({...nativeStatus,ended:true}));
+  expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(videoRevision(3).video));
  });
- it('ignores an obsolete open result after a revision change',async()=>{
+ it('holds the Windows clip through EOF, then opens only the newest buffered clip',async()=>{
+  vi.mocked(invoke).mockResolvedValueOnce('data:video/mp4;base64,first').mockResolvedValueOnce('data:video/mp4;base64,latest');
+  const {container,rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
+  const first=await waitFor(()=>{const player=container.querySelector('video');expect(player).not.toBeNull();return player!;});
+  rerender(<TemporalPreview preview={videoRevision(2)} active label="preview"/>);
+  rerender(<TemporalPreview preview={videoRevision(3)} active label="preview"/>);
+  expect(container.querySelector('video')).toBe(first);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  fireEvent.ended(first);
+  await waitFor(()=>expect(container.querySelector('video')?.getAttribute('src')).toContain('latest'));
+  expect(invoke).toHaveBeenLastCalledWith('native_video_open',expect.objectContaining({source:videoRevision(3).video}));
+ });
+ it('holds the last canvas frame after a full cycle until a new preview arrives',async()=>{
+  const {rerender}=render(<TemporalPreview preview={frames} active label="preview"/>);
+  await waitFor(()=>expect(callbacks).toHaveLength(1));
+  act(()=>callbacks.shift()!(0));
+  act(()=>callbacks.shift()!(245));
+  expect(callbacks).toHaveLength(1);
+  act(()=>callbacks.shift()!(250));
+  expect(callbacks).toHaveLength(0);
+  expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![1].src);
+  rerender(<TemporalPreview preview={{...frames,revision:2}} active label="preview"/>);
+  await waitFor(()=>expect(callbacks).toHaveLength(1));
+  act(()=>callbacks.shift()!(270));
+  expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![0].src);
+ });
+ it('ignores an outstanding open after playback is deactivated',async()=>{
   let settle!:(value:string)=>void;
   vi.mocked(invoke).mockImplementationOnce(()=>new Promise(resolve=>{settle=resolve as typeof settle;})).mockResolvedValue('data:video/mp4;base64,new');
   const {container,rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
-  rerender(<TemporalPreview preview={{...video,revision:2,video:{previewJobId:'job',previewRevision:2}}} active label="preview"/>);
+  rerender(<TemporalPreview preview={video} active={false} label="preview"/>);
+  rerender(<TemporalPreview preview={videoRevision(2)} active label="preview"/>);
   await waitFor(()=>expect(container.querySelector('video')?.getAttribute('src')).toContain('new'));
   await act(async()=>settle('data:video/mp4;base64,old'));
   expect(container.querySelector('video')?.getAttribute('src')).toContain('new');

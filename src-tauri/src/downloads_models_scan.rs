@@ -22,6 +22,7 @@ impl ScanScope {
 struct FetchSelection {
     paths: Option<Vec<String>>,
     missing_only: bool,
+    save_preview: bool,
     index_directory: Option<PathBuf>,
 }
 
@@ -29,6 +30,7 @@ fn selected_paths(
     root: &Path,
     paths: Vec<String>,
     missing_only: bool,
+    save_preview: bool,
 ) -> Result<Vec<String>, String> {
     if paths.len() > MAX_LISTING {
         return Err("Too many files in Fetch selection".into());
@@ -54,8 +56,14 @@ fn selected_paths(
             continue;
         }
         if missing_only
-            && read_info(Path::new(&path))
-                .is_some_and(|info| info.civitai.is_some_and(|c| c.preview.is_some()))
+            && read_info(Path::new(&path)).is_some_and(|info| {
+                info.civitai.is_some_and(|c| {
+                    c.creator.is_some()
+                        && (!save_preview
+                            || c.preview.is_none()
+                            || index::has_local_preview(Path::new(&path)))
+                })
+            })
         {
             continue;
         }
@@ -181,9 +189,15 @@ impl ModelScanEngine {
         selection: FetchSelection,
     ) -> Result<(), String> {
         let directory = selection.index_directory;
+        let save_preview = selection.save_preview;
         let paths = tokio::task::spawn_blocking(move || {
             if let Some(paths) = selection.paths {
-                selected_paths(Path::new(&root), paths, selection.missing_only)
+                selected_paths(
+                    Path::new(&root),
+                    paths,
+                    selection.missing_only,
+                    save_preview,
+                )
             } else {
                 scan(Path::new(&root)).map(|models| {
                     models
@@ -219,7 +233,9 @@ impl ModelScanEngine {
             report(&status, "INFO", "processing");
             // Each fetch carries its own file handle and provider request; nothing is shared.
             tasks.spawn(async move {
-                let failed = fetch(&provider, path.clone().into(), header).await.is_err();
+                let failed = fetch(&provider, path.clone().into(), header, save_preview)
+                    .await
+                    .is_err();
                 (path, failed)
             });
         }
@@ -301,6 +317,7 @@ pub async fn native_model_scan_start(
     authenticated: bool,
     paths: Option<Vec<String>>,
     missing_only: Option<bool>,
+    save_preview: Option<bool>,
 ) -> Result<ModelScanStatus, String> {
     let result = (|| {
         if engine.status()?.state == "running" {
@@ -322,6 +339,7 @@ pub async fn native_model_scan_start(
             FetchSelection {
                 paths,
                 missing_only: missing_only.unwrap_or(false),
+                save_preview: save_preview.unwrap_or(false),
                 index_directory: Some(index::directory(&app)?),
             },
         )
@@ -350,41 +368,53 @@ mod tests {
         std::fs::write(&path, b"fixture").unwrap();
         let file = path.to_string_lossy().into_owned();
         assert_eq!(
-            selected_paths(&root, vec![file.clone(), file.clone()], false).unwrap(),
+            selected_paths(&root, vec![file.clone(), file.clone()], false, false).unwrap(),
             vec![file.clone()]
         );
         assert_eq!(
-            selected_paths(&root, vec![file.clone()], true)
+            selected_paths(&root, vec![file.clone()], true, false)
                 .unwrap()
                 .len(),
             1
         );
         let source = Source::open(&path).unwrap();
-        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.jpg"})).unwrap()) };
+        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","creator":"FixtureAuthor","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.jpg"})).unwrap()) };
         publish_info(&source, &None, &info, || {}).unwrap();
-        assert!(selected_paths(&root, vec![file.clone()], true)
+        assert!(selected_paths(&root, vec![file.clone()], true, false)
             .unwrap()
             .is_empty());
         assert_eq!(
-            selected_paths(&root, vec![file.clone()], false)
+            selected_paths(&root, vec![file.clone()], false, false)
                 .unwrap()
                 .len(),
             1
         );
+        assert_eq!(
+            selected_paths(&root, vec![file.clone()], true, true).unwrap(),
+            vec![file.clone()]
+        );
+        std::fs::write(folder.join("a.preview.png"), b"local preview").unwrap();
+        assert!(selected_paths(&root, vec![file.clone()], true, true)
+            .unwrap()
+            .is_empty());
         std::fs::write(&path, b"changed fixture").unwrap();
         assert_eq!(
-            selected_paths(&root, vec![file.clone()], true)
+            selected_paths(&root, vec![file.clone()], true, false)
                 .unwrap()
                 .len(),
             1
         );
         let outside = dir.path().join("outside.pt");
         std::fs::write(&outside, b"fixture").unwrap();
-        assert!(
-            selected_paths(&root, vec![outside.to_string_lossy().into_owned()], false).is_err()
-        );
-        assert!(selected_paths(&root, vec!["relative.pt".into()], false).is_err());
-        assert!(selected_paths(&root, vec![file; MAX_LISTING + 1], false).is_err());
+        assert!(selected_paths(
+            &root,
+            vec![outside.to_string_lossy().into_owned()],
+            false,
+            false
+        )
+        .is_err());
+        assert!(selected_paths(&root, vec!["relative.pt".into()], false, false).is_err());
+        assert!(selected_paths(&root, vec![file; MAX_LISTING + 1], false, false).is_err());
     }
 
     #[test]

@@ -152,8 +152,9 @@ The **Fetch** control sits beside **Refresh models** in the collection header;
 its options expand below the compact action row. It works from the current saved listing. Choose current filtered
 results (including matching cards beyond Show more), current folder and descendants,
 current model category or the entire library. **Only missing metadata or previews**
-is enabled initially; native code skips source-valid CivitAI records with a preview
-link. Uncheck it to refresh existing records. A no-match CivitAI result remains
+is enabled initially. Fetch skips current metadata with creator information and,
+when local saving is enabled, a local cover if the provider offers one. Uncheck it
+to refresh existing records. A no-match CivitAI result remains
 missing and can be retried explicitly. The count is an upper bound before native
 missing-record checks. In a card's popup, Fetch/Refresh metadata handles that file.
 
@@ -161,19 +162,33 @@ missing-record checks. In a card's popup, Fetch/Refresh metadata handles that fi
 and may read whole weight files when hashing is needed. Native code validates and
 deduplicates the selected paths, keeps four requests in flight, reports progress
 and errors through central Logs, and continues when switching views. It caches
-metadata and preview URLs beside each model without downloading weights or
-replacing local covers. Preview images load from those links when displayed;
-this is not an offline image downloader. Configured CivitAI credentials use the
-existing native authorization flow. Closing DEAS stops in-flight work.
+metadata and preview URLs beside each model. **Save preview locally** sits beside
+**Start fetch**, defaults to off, and applies to batch and individual metadata
+fetches. When enabled, Fetch saves a missing CivitAI still image next to the model.
+An existing local preview is used as-is. If saving fails, the metadata and remote
+preview link are still available. Configured CivitAI credentials apply to metadata
+lookups. Closing DEAS stops in-flight work.
 
 Completed batches patch the native index once per saved index, then refresh the
 visible cards from that saved index. No recursive model-folder listing is triggered
 by Fetch or by returning to Library. **Scan Files** retains its older explicit
 whole-folder discovery workflow; **Refresh models** discovers local file changes.
 
-The layout is inspired by [ComfyUI LoRA Manager](https://github.com/willmiao/ComfyUI-Lora-Manager),
-implemented with DEAS's existing model/auth/download services. Global search includes
-local model search, Favorites, folder/base filters and Refresh models.
+In **Model details**, click the file path to open its containing folder. **View on
+Civitai** opens the matched version and the creator name opens their profile when
+that information is available. Models flagged mature open on civitai.red, because
+civitai.com only shows a "moved to civitai.red" notice for them; other models open on
+civitai.com. Metadata lookups and downloads keep using the civitai.com API, which
+returns the same mature models, hashes and download redirects as civitai.red.
+Global search includes local model search, Favorites,
+folder/base filters and Refresh models.
+
+Right-click an installed model card to choose **Move to folder…** or **Delete…**.
+Use **Bulk select** to pick individual cards or select the filtered results. Move
+chooses an existing folder in the same model category and refuses filename
+conflicts. Delete requires confirmation and permanently removes the selected
+files. Metadata and unshared covers follow the models. Successful changes update
+the saved listing without a model-folder scan.
 
 The proposed native browser stores a native browsing index in the app cache, keyed by
 configured model roots and detector version. The first load builds the index;
@@ -190,4 +205,4 @@ still checks selected files live. No background filesystem watcher is added.
 
 `native_settings_read({root})` / `native_settings_write({root, folders:{models?,input?,output?}})` keep `deas-settings.json` beside the environment (absolute existing directories only). The owned backend start appends `--input-directory`, `--output-directory` and `--extra-model-paths-config <root>/deas-models.yaml` (generated, `base_path` = models folder with the standard ComfyUI subfolders) when set; a folder removed since saving fails the start. The Library targets `<models>/<category>` for model categories when a models folder is configured. `native_files_present({paths})` reports which absolute files exist; the Library marks listed files found in the destination as "already local" and does not offer them for download. Catalog cards (model pages) are not checked until their files are listed.
 
-`native_models_scan({root})` lists model files (`safetensors/sft/ckpt/pt/pth/gguf/bin`, hidden names skipped, 5000 cap) under the standard ComfyUI category folders of `root` with any cached `<file>.deas.json` sidecar and a `family` ID for model and LoRA files (safetensors header `modelspec.architecture` or tensor-key signature from `src/families/builtin.json`, else the cached CivitAI base model; absent = unknown). `native_model_info({path, authenticated})` hashes the file (reusing the cached hash while the size is unchanged), queries CivitAI `api/v1/model-versions/by-hash/<sha256>` through the catalog's CivitAI provider (token when configured and requested) and writes the sidecar atomically: `sha256`, `size`, `fetchedAt`, and `civitai` (model/version IDs and names, type → ComfyUI category, base model, NSFW flag, trigger words, 450px preview URL, first showcase image settings) or `null` for an unknown hash. Previews are shown from CivitAI URLs, not downloaded. Sidecar metadata is informational: it is not a verified download, license acceptance or architecture check.
+`native_models_scan({root})` lists model files (`safetensors/sft/ckpt/pt/pth/gguf/bin`, hidden names skipped, 5000 cap) under the standard ComfyUI category folders of `root` with any cached `<file>.deas.json` sidecar and a `family` ID for model and LoRA files (safetensors header `modelspec.architecture` or tensor-key signature from `src/families/builtin.json`, else the cached CivitAI base model; absent = unknown). `native_model_info({path, authenticated})` hashes the file (reusing the cached hash while the source fingerprint matches), queries CivitAI `api/v1/model-versions/by-hash/<sha256>` through the catalog's CivitAI provider (token when configured and requested) and writes the sidecar atomically: `sha256`, `size`, `fetchedAt`, and `civitai` (model/version IDs and names, type → ComfyUI category, base model, NSFW flag, trigger words, 450px preview URL, first showcase image settings) or `null` for an unknown hash. A valid local cover takes precedence over the preview URL. Sidecar metadata is informational: it is not a verified download, license acceptance or architecture check.

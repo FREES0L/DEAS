@@ -111,9 +111,12 @@ pub fn native_logs_library_error(operation: String) {
         "selection" => (3, "ERROR: Library to Studio LoRA selection: request storage unavailable or queue full; addition was not applied"),
         "organization" => (4, "ERROR: Library favorites and organization operation=save failed"),
         "family" => (5, "ERROR: Library model family batch operation=write failed"),
+        "preview-fetch" => (6, "WARN: Library could not save a local CivitAI preview; metadata remains available"),
+        "open-link" => (7, "ERROR: Library could not open the requested folder or CivitAI page"),
+        "files" => (8, "WARN: Library model file operation did not fully complete"),
         _ => return,
     };
-    static LAST: Mutex<[Option<std::time::Instant>; 6]> = Mutex::new([None; 6]);
+    static LAST: Mutex<[Option<std::time::Instant>; 9]> = Mutex::new([None; 9]);
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     if last[slot].is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
         return;

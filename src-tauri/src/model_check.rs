@@ -160,6 +160,7 @@ mod tests {
 
     fn model(name: &str) -> LocalModel {
         LocalModel {
+            local_preview: None,
             check: None,
             category: "loras".into(),
             name: name.into(),

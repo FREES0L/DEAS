@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { readPref } from './preferences';
+import type { ModelFileChange } from './models';
 import { modelPathKey } from './modelLibrary';
 import { reportLibraryError } from '../features/downloads/libraryDiagnostics';
 export type ModelAnnotation={favorite?:boolean;notes?:string;tags?:string[]};
@@ -15,9 +16,21 @@ export function useModelOrganization(scope:'local'|'catalog'='local'){
  const annotate=(path:string,patch:ModelAnnotation)=>{if(!path)return false;const current=readPref(key,organization,validOrganization);const existing=Object.keys(current).find(p=>identityKey(p)===identityKey(path))??path;return save({...current,[existing]:{...current[existing],...patch}});};
  // Explicit set/unset makes mixed selections predictable and uses one preference write.
  const setFavorites=(paths:string[],favorite:boolean)=>{const current=readPref(key,organization,validOrganization),next={...current};const existing=new Map(Object.keys(current).map(path=>[identityKey(path),path]));for(const path of paths.filter(Boolean)){const normalized=identityKey(path),target=existing.get(normalized)??path;next[target]={...next[target],favorite};existing.set(normalized,target);}return paths.some(Boolean)?save(next):true;};
+ const applyFileChanges=(changes:ModelFileChange[])=>{
+  const current=readPref(key,organization,validOrganization),next={...current};
+  const existing=new Map(Object.keys(current).map(path=>[identityKey(path),path]));
+  let changed=false;
+  for(const {old,path} of changes){
+   const previous=existing.get(identityKey(old));
+   if(!previous)continue;
+   if(path)next[path]=current[previous];
+   delete next[previous];changed=true;
+  }
+  if(changed)save(next);
+ };
  const byPath=useMemo(()=>new Map(Object.entries(organization).map(([p,v])=>[identityKey(p),v])),[organization,scope]);
  const annotation=(path:string)=>byPath.get(identityKey(path));
  const isFavorite=(path:string)=>!!path&&!!annotation(path)?.favorite;
  const toggleFavorite=(path:string)=>annotate(path,{favorite:!isFavorite(path)});
- return {organization,annotation,annotate,isFavorite,toggleFavorite,setFavorites,error};
+ return {organization,annotation,annotate,isFavorite,toggleFavorite,setFavorites,applyFileChanges,error};
 }

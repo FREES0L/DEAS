@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { useI18n } from '../../i18n/I18nProvider';
 import { describeMedia, draggedItem, dragItem, dropCssPoint, MEDIA_DRAG, itemFromEntry, itemFromFile, listMedia, normalizedMediaPath as normalizedPath, pasteToInput, pastedPictures, type MediaEntry, type MediaItem, type MediaListing } from '../../lib/media';
 import { usePref } from '../../lib/preferences';
 import { StarMediaButton } from './StarMediaButton';
+import { MediaTileDrag } from './MediaTileDrag';
 import { relocatedMediaItem, type MediaRelocation } from '../../lib/media';
 import { deleteMedia, type MediaDeletion } from '../../lib/media';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -38,9 +39,9 @@ function Thumb({entry}:{entry:MediaEntry}){
   void still.then(s=>{thumbs.set(key,s);if(alive)setSrc(s);});
   return()=>{alive=false;};
  },[key]); // eslint-disable-line react-hooks/exhaustive-deps
- if(video)return src?<span className="media-video-still"><img src={src} alt="" loading="lazy" decoding="async"/><span className="media-video-badge" aria-hidden="true">▶</span></span>:<span className="media-glyph" aria-hidden="true">▶</span>;
+ if(video)return src?<span className="media-video-still"><img src={src} alt="" draggable={false} loading="lazy" decoding="async"/><span className="media-video-badge" aria-hidden="true">▶</span></span>:<span className="media-glyph" aria-hidden="true">▶</span>;
  if(!src)return <span className="media-glyph" aria-hidden="true"/>;
- return src.startsWith(convertFileSrc(entry.path)+'?')&&/\.(webp|gif|apng)$/i.test(entry.name)?<Still src={src}/>:<img src={src} alt="" loading="lazy" decoding="async"/>;
+ return src.startsWith(convertFileSrc(entry.path)+'?')&&/\.(webp|gif|apng)$/i.test(entry.name)?<Still src={src}/>:<img src={src} alt="" draggable={false} loading="lazy" decoding="async"/>;
 }
 /** First-frame still of a local video by path (queue rows); `fallback` while loading or when FFmpeg cannot read it. */
 export function VideoStill({path,fallback}:{path:string;fallback:React.ReactNode}){
@@ -80,6 +81,7 @@ export interface MediaLibraryProps { selected: MediaItem|null; onSelect: (item: 
 /** Media browser with explicit native-authorized physical starring. */
 export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter='',sort='date',view='tiles',type='all',marks,actions}:MediaLibraryProps){
  const {t}=useI18n();
+ const startTileDrag=useContext(MediaTileDrag);
  const dropBox=useRef<HTMLElement>(null),selectRef=useRef(onSelect);selectRef.current=onSelect;
  const native=isTauri();
  const [listing,setListing]=useState<MediaListing|null>(null);
@@ -259,7 +261,16 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
  const mark=(path?:string)=>path?pathMarks.get(normalizedPath(path)):undefined;
  // Beside the button, so the tile's accessible name stays the file name.
  const badge=(path?:string)=>mark(path)&&<span className="media-mark">{mark(path)}</span>;
- const thumb=(media:string|null,src:string|null)=>media==='image'&&src?<img src={src} alt="" loading="lazy"/>:<span className="media-glyph" aria-hidden="true">{media==='video'?'▶':media==='audio'?'♪':'▸'}</span>;
+ const tileDragProps=(item:MediaItem|null)=>{
+  if(startTileDrag&&item?.path&&!selectMode)return {
+   draggable:false,'data-reference-tile-drag':true,
+   onPointerDown:(e:React.PointerEvent<HTMLButtonElement>)=>startTileDrag(item,e,target=>{
+    if(target&&target===intake.current&&item.path)void copyIn([item.path]);
+   }),
+  };
+  return {draggable:!!item,onDragStart:(e:React.DragEvent<HTMLButtonElement>)=>{if(item)dragItem(e.dataTransfer,item);}};
+ };
+ const thumb=(media:string|null,src:string|null)=>media==='image'&&src?<img src={src} alt="" draggable={false} loading="lazy"/>:<span className="media-glyph" aria-hidden="true">{media==='video'?'▶':media==='audio'?'♪':'▸'}</span>;
  return <aside ref={dropBox} className={`media-library${dragging?' is-dragging':''}`} data-view={view} aria-label={t('media.title')}
   onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)}
   onDrop={e=>{e.preventDefault();setDragging(false);addDropped([...e.dataTransfer.files].map(itemFromFile));}}>
@@ -283,9 +294,9 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
   {selectMode&&<div className="media-selection" role="group" aria-label={t('media.select.title')}><span>{t('media.select.count',{count:picked.size})}</span><button type="button" disabled={deleting||!selectable.length||selectable.length>500} title={selectable.length>500?t('media.select.limit'):undefined} onClick={()=>setPicked(new Set(selectable.map(entry=>entry.path)))}>{t('media.select.all')}</button><button type="button" disabled={deleting||!picked.size} onClick={()=>setPicked(new Set())}>{t('media.select.clear')}</button><button type="button" disabled={deleting||!picked.size} onClick={()=>setConfirmDelete(selectable.filter(entry=>picked.has(entry.path)).map(entry=>itemFromEntry(entry)!))}>{t('media.delete.selected')}</button></div>}
   {deleteStatus&&<p className="media-help" role="status">{deleteStatus}</p>}
   {deleting&&<p className="media-help" role="status">{t('media.delete.busy')}</p>}
-  {dropped.length>0&&<ul className="media-list" aria-label={t('media.dropped')}>{dropped.filter(i=>type==='all'||i.media===type).map((item,i)=><li key={`${item.src}-${i}`} data-mark={mark(item.path)}><button type="button" data-media={item.media} aria-current={selected?.src===item.src} draggable onDragStart={e=>dragItem(e.dataTransfer,item)} onContextMenu={onMenu(item)} onClick={()=>onSelect(item)}>{thumb(item.media,item.src)}<span className="media-name">{item.name}</span></button>{badge(item.path)}{canStar(item)&&<StarMediaButton item={item}/>}</li>)}</ul>}
+  {dropped.length>0&&<ul className="media-list" aria-label={t('media.dropped')}>{dropped.filter(i=>type==='all'||i.media===type).map((item,i)=><li key={`${item.src}-${i}`} data-mark={mark(item.path)}><button type="button" data-media={item.media} aria-current={selected?.src===item.src} {...tileDragProps(item)} onContextMenu={onMenu(item)} onClick={()=>onSelect(item)}>{thumb(item.media,item.src)}<span className="media-name">{item.name}</span></button>{badge(item.path)}{canStar(item)&&<StarMediaButton item={item}/>}</li>)}</ul>}
   {error&&<p className="media-error" role="alert">{error}</p>}
-  {listing&&<Tiles folder={listing.path} layout={view} className="media-list" aria-label={t('media.entries')} items={visible} render={entry=><li key={entry.path} data-mark={mark(entry.path)} data-picked={picked.has(entry.path)||undefined}><button type="button" data-kind={entry.kind} data-media={entry.media??undefined} aria-current={selected?.path===entry.path} title={entry.name} draggable onDragStart={e=>{const item=itemFromEntry(entry);if(item)dragItem(e.dataTransfer,item);}} onContextMenu={onMenu(itemFromEntry(entry))} disabled={deleting} onClick={()=>selectMode?(!entry.symlink&&canDelete(itemFromEntry(entry)!)&&togglePicked(entry.path)):choose(entry)}>{native&&(entry.media==='image'||entry.media==='video')?<Thumb key={thumbKey(entry)} entry={entry}/>:thumb(entry.media,null)}<span className="media-name">{entry.name}{entry.symlink&&<span className="media-symlink" aria-label={t('media.symlink')}> ⤳</span>}</span></button>{selectMode&&<input className="media-pick" type="checkbox" aria-label={t('media.select.file',{name:entry.name})} checked={picked.has(entry.path)} disabled={deleting||entry.symlink||!canDelete(itemFromEntry(entry)!)} onChange={()=>togglePicked(entry.path)}/>}{badge(entry.path)}{!selectMode&&canStar(itemFromEntry(entry)!)&&<StarMediaButton key={`${entry.path}:${outputRevision}`} item={itemFromEntry(entry)!}/>}</li>}/>}
+  {listing&&<Tiles folder={listing.path} layout={view} className="media-list" aria-label={t('media.entries')} items={visible} render={entry=><li key={entry.path} data-mark={mark(entry.path)} data-picked={picked.has(entry.path)||undefined}><button type="button" data-kind={entry.kind} data-media={entry.media??undefined} aria-current={selected?.path===entry.path} title={entry.name} {...tileDragProps(itemFromEntry(entry))} onContextMenu={onMenu(itemFromEntry(entry))} disabled={deleting} onClick={()=>selectMode?(!entry.symlink&&canDelete(itemFromEntry(entry)!)&&togglePicked(entry.path)):choose(entry)}>{native&&(entry.media==='image'||entry.media==='video')?<Thumb key={thumbKey(entry)} entry={entry}/>:thumb(entry.media,null)}<span className="media-name">{entry.name}{entry.symlink&&<span className="media-symlink" aria-label={t('media.symlink')}> ⤳</span>}</span></button>{selectMode&&<input className="media-pick" type="checkbox" aria-label={t('media.select.file',{name:entry.name})} checked={picked.has(entry.path)} disabled={deleting||entry.symlink||!canDelete(itemFromEntry(entry)!)} onChange={()=>togglePicked(entry.path)}/>}{badge(entry.path)}{!selectMode&&canStar(itemFromEntry(entry)!)&&<StarMediaButton key={`${entry.path}:${outputRevision}`} item={itemFromEntry(entry)!}/>}</li>}/>}
   {menu&&<div className="media-menu" role="menu" aria-label={menu.item.name} style={{left:Math.min(menu.x,window.innerWidth-200),top:Math.min(menu.y,window.innerHeight-48*(2+menu.actions.length))}}>
    {menu.actions.map((a,i)=><button key={a.label} type="button" role="menuitem" autoFocus={i===0} disabled={!!a.blocked} title={a.blocked?undefined:a.hint} onClick={()=>{setMenu(null);a.onClick();}}>{a.label}{a.blocked&&<small>{a.blocked}</small>}</button>)}
    {native&&menu.item.path&&<button type="button" role="menuitem" autoFocus={!menu.actions.length} onClick={()=>reveal(menu.item.path!)}>{t('media.reveal')}</button>}

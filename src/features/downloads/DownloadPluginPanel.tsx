@@ -8,7 +8,7 @@ import { filesPresent } from '../../lib/settings';
 import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloads, cancelDownloads, pickDownloadParent, planDownloads, readAuthStatus, readDownloadCatalog, readDownloadStatus, removeAuthToken, setAuthToken, startDownloads, comfyFolder, openTokenPage } from '../../lib/downloads';
 import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
 import { isString, oneOf, usePref } from '../../lib/preferences';
-import { fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
+import { changeModelFiles, fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
 import { loadInstalledListing, rememberInstalledListing } from './installedListing';
 import { InstalledGallery } from './InstalledGallery';
 import { CatalogGallery,type CatalogCard } from './CatalogGallery';
@@ -100,13 +100,35 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
  const [models,setModelState]=useState<LocalModel[]|null>(null);
  const setModels=useCallback((change:SetStateAction<LocalModel[]|null>)=>setModelState(old=>{const next=typeof change==='function'?change(old):change;if(next)rememberInstalledListing(root,next);return next;}),[root]);
  useModelMetadataUpdates(setModels);const [scanError,setScanError]=useState(false);const [selected,setSelected]=useState('');
+ const [savePreview,setSavePreview]=usePref('library.fetch.savePreview',false,(v):v is boolean=>typeof v==='boolean');
  const [listingBusy,setListingBusy]=useState(false);const listingEpoch=useRef(0);
  useEffect(()=>{if(!io.native)return;const epoch=++listingEpoch.current;setModels(null);setScanError(false);setSelected('');setListingBusy(true);loadInstalledListing(root).then(v=>{if(listingEpoch.current===epoch)setModels(v);},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});return()=>{listingEpoch.current++;};},[root,io.native,setModels]);
- const refreshListing=()=>{const epoch=++listingEpoch.current;setScanError(false);setListingBusy(true);loadInstalledListing(root,true).then(v=>{if(listingEpoch.current===epoch){setModels(v);setSelected('');}},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});};
- const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),v=>{const updates=refreshModelPreviews([v]);setModels(old=>old?patchModels(old,updates):old);publishModelLibrary({root,updates});});
+ const refreshListing=()=>{const epoch=++listingEpoch.current;setScanError(false);setListingBusy(true);loadInstalledListing(root,true).then(v=>{if(listingEpoch.current===epoch){setModels(v);setSelected(old=>v.some(m=>m.path===old)?old:'');}},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});};
+ const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured),savePreview),v=>{const updates=refreshModelPreviews([v]);setModels(old=>old?patchModels(old,updates):old);publishModelLibrary({root,updates});});
  const [scanScope,setScanScope]=useState<ModelScanScope>('all');
  const [scanStatus,setScanStatus]=useState<ModelScanStatus|null>(null);const [statusError,setStatusError]=useState(false);const scanEpoch=useRef(0);
  const scanning=scanStatus?.state==='running';
+ const [fileBusy,setFileBusy]=useState(false);
+ const runFiles=async(paths:string[],destination?:string)=>{
+  if(fileBusy||locked||scanning||listingBusy||io.busy)throw new Error(t('library.fileBusy'));
+  setFileBusy(true);
+  try{
+   const result=await changeModelFiles(root,paths,destination);
+   const byPath=new Map(result.changes.map(change=>[change.old,change]));
+   const next=(models??[]).flatMap(model=>{
+    const change=byPath.get(model.path);
+    if(!change)return [model];
+    return change.path&&change.name?[{...model,path:change.path,name:change.name,localPreview:change.localPreview??undefined}]:[];
+   });
+   if(result.changes.length){
+    setModels(next);
+    setSelected(current=>{const change=byPath.get(current);return change?change.path??'':current;});
+    publishModelLibrary({root,models:next});
+   }
+   return result;
+  }finally{setFileBusy(false);}
+ };
+
  useEffect(()=>{if(!io.native)return;let alive=true;let timer:ReturnType<typeof setTimeout>;let seenJob='';setScanStatus(null);
   const poll=async()=>{const epoch=scanEpoch.current;try{const value=await readModelScanStatus();if(!alive)return;
    if(epoch===scanEpoch.current){setScanStatus(value);setStatusError(false);
@@ -117,21 +139,21 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
   void poll();return()=>{alive=false;clearTimeout(timer);};
  },[root,io.native]);
  const startScan=()=>{scanEpoch.current++;void io.request(async()=>startModelScan(root,scanScope,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),value=>{scanEpoch.current++;setScanStatus(value);});};
- const fetchBatch=(targets:LocalModel[],missingOnly:boolean)=>{scanEpoch.current++;void io.request(async()=>startModelScan(root,'all',(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured),{paths:targets.map(m=>m.path),missingOnly}),value=>{scanEpoch.current++;setScanStatus(value);});};
+ const fetchBatch=(targets:LocalModel[],missingOnly:boolean)=>{scanEpoch.current++;void io.request(async()=>startModelScan(root,'all',(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured),{paths:targets.map(m=>m.path),missingOnly,savePreview}),value=>{scanEpoch.current++;setScanStatus(value);});};
  const detail=(m:LocalModel)=>{const c=m.info?.civitai;const s=c?.settings;const settings=s?[s.sampler,s.scheduler,s.steps!==undefined&&t('downloads.installed.steps',{n:s.steps}),s.cfgScale!==undefined&&t('downloads.installed.cfg',{n:s.cfgScale}),s.size,s.clipSkip!==undefined&&t('downloads.installed.clipSkip',{n:s.clipSkip})].filter(Boolean).join(' · '):'';
   return <div className="download-picker"><ModelDeclaredBadge model={m}/><ModelAdvice check={checkModel(m)}/><ModelCompanionAdvice model={m} models={models??[]} locked={locked} onOpen={onCompanion}/><dl className="download-identity">
    {m.integrity&&<><dt>{t('downloads.installed.integrity')}</dt><dd>{t('downloads.installed.truncated')}</dd></>}
    {m.info&&<><dt>{t('downloads.installed.civitai')}</dt><dd>{c?[c.name,c.version,c.base].filter(Boolean).join(' · '):t('downloads.installed.none')}</dd></>}
    {settings&&<><dt>{t('downloads.installed.settings')}</dt><dd>{settings}</dd></>}
   </dl><p className="field-help">{t('downloads.installed.hashHelp')}</p>
-  <button className="action-button" disabled={io.busy||locked||scanning||!scanStatus||statusError} onClick={()=>fetch(m)}>{t(m.info?'downloads.installed.refresh':'downloads.installed.fetch')}</button>
+  <button className="action-button" disabled={io.busy||locked||scanning||fileBusy||!scanStatus||statusError} onClick={()=>fetch(m)}>{t(m.info?'downloads.installed.refresh':'downloads.installed.fetch')}</button>
   {io.busy&&<p role="status"><span className="aio-spinner" aria-hidden="true"/> {t('downloads.pending')}</p>}{io.error&&<p role="alert">{t('downloads.installed.fetchError')}</p>}</div>;};
- return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||io.busy||listingBusy||!scanStatus||statusError}
+ return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||fileBusy||io.busy||listingBusy||!scanStatus||statusError} fileActions={io.native?{run:runFiles,disabled:locked||scanning||listingBusy||io.busy||fileBusy}:undefined} previewPreference={{save:savePreview,set:setSavePreview}}
   actions={<>
-   {io.native&&<button className="action-button library-refresh" type="button" disabled={locked||listingBusy||scanning||io.busy} onClick={refreshListing}><span aria-hidden="true">↻</span> {t('downloads.installed.refreshListing')}</button>}
+   {io.native&&<button className="action-button library-refresh" type="button" disabled={locked||listingBusy||scanning||fileBusy||io.busy} onClick={refreshListing}><span aria-hidden="true">↻</span> {t('downloads.installed.refreshListing')}</button>}
    {io.native&&!!models&&models.length>0&&<div className="library-scan-tools">
     <label>{t('downloads.installed.scanScope')}<select data-scan-scope aria-label={t('downloads.installed.scanScope')} value={scanScope} disabled={locked||scanning||io.busy} onChange={e=>setScanScope(e.target.value as 'all'|'models'|'loras')}><option value="all">{t('downloads.installed.scopeAll')}</option><option value="models">{t('downloads.installed.scopeModels')}</option><option value="loras">{t('downloads.installed.scopeLoras')}</option></select></label>
-    <button className="action-button" type="button" data-scan-files title={t('downloads.installed.scanAllHelp')} disabled={locked||scanning||io.busy||!scanStatus||statusError} onClick={startScan}>{t('downloads.installed.scanAll')}</button>
+    <button className="action-button" type="button" data-scan-files title={t('downloads.installed.scanAllHelp')} disabled={locked||scanning||fileBusy||io.busy||!scanStatus||statusError} onClick={startScan}>{t('downloads.installed.scanAll')}</button>
    </div>}
   </>}
   feedback={<>

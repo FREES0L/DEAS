@@ -4,8 +4,12 @@
 use super::*;
 #[path = "downloads_models_scan.rs"]
 pub mod background;
+#[path = "downloads_model_files.rs"]
+pub mod files;
 #[path = "downloads_models_index.rs"]
 pub mod index;
+#[path = "downloads_models_preview.rs"]
+mod preview;
 use serde_json::Value;
 use std::{
     fs::File,
@@ -483,6 +487,8 @@ pub struct CivitaiInfo {
     pub model_id: u64,
     pub version_id: u64,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creator: Option<String>,
     pub version: String,
     pub model_type: String,
     pub category: String,
@@ -579,6 +585,8 @@ impl CachedMetadata {
 #[serde(rename_all = "camelCase")]
 pub struct LocalModel {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub check: Option<crate::model_check::ModelCheck>,
     pub category: String,
     /// Path relative to the category folder, the way ComfyUI names models.
@@ -658,6 +666,12 @@ fn validate_info(info: &ModelInfo) -> Result<(), String> {
         }
         bounded_text(&c.name, 240)?;
         bounded_text(&c.version, 240)?;
+        if c.creator
+            .as_deref()
+            .is_some_and(|name| !crate::token_page::valid_civitai_creator(name))
+        {
+            return Err("Invalid cached CivitAI creator".into());
+        }
         if c.model_id == 0
             || c.version_id == 0
             || c.model_type.chars().count() > 40
@@ -925,6 +939,7 @@ fn describe(category: &str, base: &Path, path: &Path) -> Result<LocalModel, Stri
         .and_then(|base| crate::model_families::from_base(category, base));
     source.verify()?;
     let mut model = LocalModel {
+        local_preview: None,
         check: None,
         category: category.into(),
         name: path
@@ -1093,6 +1108,11 @@ fn settings(meta: &Value) -> Option<Settings> {
 }
 
 /// Shape of `GET api/v1/model-versions/by-hash/<sha256>`.
+fn civitai_creator(value: &Value) -> Option<String> {
+    let name = value.get("creator")?.get("username")?.as_str()?;
+    crate::token_page::valid_civitai_creator(name).then(|| name.to_owned())
+}
+
 pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
     let model = v.get("model").ok_or("Missing CivitAI model")?;
     let name = providers::text(model, "name")?;
@@ -1116,6 +1136,7 @@ pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
             .and_then(Value::as_u64)
             .ok_or("Missing CivitAI version ID")?,
         name: name.into(),
+        creator: civitai_creator(v).or_else(|| civitai_creator(model)),
         version: version.into(),
         model_type: model_type.chars().take(40).collect(),
         category: providers::civitai_category(Some(model_type)).into(),
@@ -1199,6 +1220,7 @@ pub async fn fetch(
     p: &Provider,
     path: PathBuf,
     header: Option<HeaderValue>,
+    save_preview: bool,
 ) -> Result<LocalModel, String> {
     if p.kind != "civitai" {
         return Err("Metadata lookup needs the CivitAI provider".into());
@@ -1207,34 +1229,43 @@ pub async fn fetch(
         return Err("Not an absolute path to a model file".into());
     }
     let model_path = path.clone();
-    let (source, expected, sha256, family_override) = tokio::task::spawn_blocking(move || {
-        let mut source = Source::open(&model_path)?;
-        let cache = source.dir.cache(&format!("{}{SIDECAR}", source.name))?;
-        let family_override = cache.as_ref().and_then(|(_, c)| c.family_override.clone());
-        if let Some(family) = &family_override {
-            crate::model_families::validate_override(model_category(&model_path)?.0, family)?;
-            if cache.as_ref().and_then(|(_, c)| c.source.as_ref()) != Some(&source.stamp) {
-                return Err("Stale family declaration; sidecar repair required".into());
+    let (source, expected, sha256, family_override, cached_creator) =
+        tokio::task::spawn_blocking(move || {
+            let mut source = Source::open(&model_path)?;
+            let cache = source.dir.cache(&format!("{}{SIDECAR}", source.name))?;
+            let family_override = cache.as_ref().and_then(|(_, c)| c.family_override.clone());
+            if let Some(family) = &family_override {
+                crate::model_families::validate_override(model_category(&model_path)?.0, family)?;
+                if cache.as_ref().and_then(|(_, c)| c.source.as_ref()) != Some(&source.stamp) {
+                    return Err("Stale family declaration; sidecar repair required".into());
+                }
             }
-        }
-        let sha256 = match cache.as_ref() {
-            Some((_, info))
-                if info.source.as_ref() == Some(&source.stamp) && info.sha256.is_some() =>
-            {
-                info.sha256.clone().unwrap()
-            }
-            _ => source.hash()?,
-        };
-        source.verify()?;
-        Ok::<_, String>((
-            source,
-            cache.map(|(stamp, _)| stamp),
-            sha256,
-            family_override,
-        ))
-    })
-    .await
-    .map_err(|_| "Hashing task failed")??;
+            let sha256 = match cache.as_ref() {
+                Some((_, info))
+                    if info.source.as_ref() == Some(&source.stamp) && info.sha256.is_some() =>
+                {
+                    info.sha256.clone().unwrap()
+                }
+                _ => source.hash()?,
+            };
+            source.verify()?;
+            let cached_creator = cache.as_ref().and_then(|(_, cache)| {
+                if cache.source.as_ref() != Some(&source.stamp) {
+                    return None;
+                }
+                let info = cache.civitai.as_ref()?;
+                Some((info.model_id, info.creator.clone()?))
+            });
+            Ok::<_, String>((
+                source,
+                cache.map(|(stamp, _)| stamp),
+                sha256,
+                family_override,
+                cached_creator,
+            ))
+        })
+        .await
+        .map_err(|_| "Hashing task failed")??;
     let u = providers::endpoint(p, &["api", "v1", "model-versions", "by-hash", &sha256])?;
     let client = client_for(false, None)?;
     let found = tokio::time::timeout(
@@ -1243,7 +1274,47 @@ pub async fn fetch(
     )
     .await
     .map_err(|_| "CivitAI lookup exceeded 30 seconds")??;
-    let civitai = found.as_ref().map(civitai_info).transpose()?;
+    let mut civitai = found.as_ref().map(civitai_info).transpose()?;
+    if let Some(info) = civitai.as_mut().filter(|info| info.creator.is_none()) {
+        let id = info.model_id.to_string();
+        let url = providers::endpoint(p, &["api", "v1", "models", &id])?;
+        if let Ok(Ok(Some(model))) = tokio::time::timeout(
+            Duration::from_secs(10),
+            providers::json_optional(&client, p, url, &header),
+        )
+        .await
+        {
+            info.creator = civitai_creator(&model);
+        }
+        if info.creator.is_none() {
+            info.creator = cached_creator
+                .filter(|(model_id, _)| *model_id == info.model_id)
+                .map(|(_, username)| username);
+        }
+    }
+    let cover = if let Some(url) = civitai
+        .as_ref()
+        .and_then(|info| info.preview.as_deref())
+        .filter(|_| save_preview)
+    {
+        let check_path = path.clone();
+        let has_cover = tokio::task::spawn_blocking(move || index::has_local_preview(&check_path))
+            .await
+            .map_err(|_| "Preview lookup task failed")?;
+        if has_cover {
+            None
+        } else {
+            match preview::download(url).await {
+                Ok(cover) => Some(cover),
+                Err(_) => {
+                    crate::logs::native_logs_library_error("preview-fetch".into());
+                    None
+                }
+            }
+        }
+    } else {
+        None
+    };
     let info = ModelInfo {
         sha256,
         size: source.stamp.size,
@@ -1260,9 +1331,17 @@ pub async fn fetch(
         let mut cache = CachedMetadata::from_info(&info);
         cache.family_override = family_override;
         publish_cache(&source, &expected, &cache, || {})?;
+        if let Some(cover) = cover {
+            if !index::has_local_preview(&path) && preview::publish(&source, cover).is_err() {
+                crate::logs::native_logs_library_error("preview-fetch".into());
+            }
+        }
         let (category, base) =
             model_category(&path).unwrap_or(("", path.parent().unwrap_or(&path)));
-        let model = describe(category, base, &path)?;
+        let mut model = describe(category, base, &path)?;
+        if save_preview {
+            model.local_preview = index::find_local_preview(&path);
+        }
         source.verify()?;
         if model.info.as_ref() != Some(&info) {
             return Err("Metadata cache changed before returning".into());
@@ -1508,6 +1587,7 @@ pub async fn native_model_info(
     auth: tauri::State<'_, AuthState>,
     path: String,
     authenticated: bool,
+    save_preview: Option<bool>,
 ) -> Result<LocalModel, String> {
     let c = engine.catalog()?;
     let p = c
@@ -1516,7 +1596,7 @@ pub async fn native_model_info(
         .find(|p| p.kind == "civitai")
         .ok_or("No CivitAI provider in catalog")?;
     let h = credential(&auth, p, authenticated)?;
-    let model = fetch(p, PathBuf::from(path), h).await?;
+    let model = fetch(p, PathBuf::from(path), h, save_preview.unwrap_or(false)).await?;
     update_index(&app, &model).await;
     Ok(model)
 }
@@ -2838,7 +2918,7 @@ mod tests {
             scopes: vec!["model".into()],
             anonymous_notice: "".into(),
         };
-        let result = fetch(&p, path.to_owned(), None).await;
+        let result = fetch(&p, path.to_owned(), None, false).await;
         let request = tokio::task::spawn_blocking(move || server.join().unwrap())
             .await
             .unwrap();
@@ -3152,6 +3232,7 @@ mod tests {
     #[test]
     fn an_oversized_ui_listing_is_cut_honestly() {
         let seed = LocalModel {
+            local_preview: None,
             check: None,
             category: "loras".into(),
             name: "m.safetensors".into(),
@@ -3431,7 +3512,7 @@ mod tests {
         write_info(&file, &known);
         let c = Catalog::load().unwrap();
         let p = c.providers.iter().find(|p| p.kind == "civitai").unwrap();
-        let model = fetch(p, file.clone(), None).await.unwrap();
+        let model = fetch(p, file.clone(), None, false).await.unwrap();
         let civitai = model.info.unwrap().civitai.expect("hash known to CivitAI");
         assert!(civitai.model_id > 0 && !civitai.name.is_empty());
         assert!(read_info(&file).unwrap().civitai.is_some());

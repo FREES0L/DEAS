@@ -117,6 +117,10 @@ and Windows/WebView2 save-dialog, replacement/recovery and large-library
 interaction/performance acceptance remain open. Automated checks use disposable
 fixtures, not the owner's media, preferences or model collection.
 
+H3 Video and H3 Image Edit use pointer gestures for in-app Media tile drops.
+Packaged desktop acceptance remains open for dragging tiles and files from a
+file manager. See [verification](VERIFICATION.md#library-enhanced-preview-and-h3-references).
+
 ## Native model browser proposal
 
 The indexed Library/Studio browser is proposed for review. Windows compilation,

@@ -7,7 +7,7 @@ import type { LocalModel } from '../../lib/models';
 import { InstalledGallery } from './InstalledGallery';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true),convertFileSrc:(path:string)=>`https://asset.localhost${path}`}));
 const model=(name:string,extra:Partial<LocalModel>={}):LocalModel=>({name,category:'loras',path:`/models/loras/${name}`,size:1048576,info:null,...extra});
-const fox=model('characters/fox.safetensors',{family:'sdxl',info:{sha256:'a',size:1,fetchedAt:1,civitai:{name:'Fox portrait',version:'v2',base:'SDXL',trainedWords:['foxface','portrait style'],preview:'https://image.civitai.com/fox.jpg',nsfw:true,category:'loras',modelId:1,versionId:1,modelType:'LORA'}}});
+const fox=model('characters/fox.safetensors',{family:'sdxl',info:{sha256:'a',size:1,fetchedAt:1,civitai:{name:'Fox portrait',creator:'FixtureCreator',version:'v2',base:'SDXL',trainedWords:['foxface','portrait style'],preview:'https://image.civitai.com/fox.jpg',nsfw:true,category:'loras',modelId:1,versionId:1,modelType:'LORA'}}});
 const lamp=model('lighting/lamp.safetensors',{family:'flux'});
 function Host({models=[fox,lamp],onFetch,locked=false}:{models?:LocalModel[];onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;locked?:boolean}) {
  const [selected,setSelected]=useState('');const [category,setCategory]=useState('loras');
@@ -15,6 +15,21 @@ function Host({models=[fox,lamp],onFetch,locked=false}:{models?:LocalModel[];onF
 }
 beforeEach(()=>{vi.mocked(invoke).mockReset().mockResolvedValue(undefined);localStorage.clear();localStorage.setItem('deas.locale.v1','en');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:vi.fn().mockResolvedValue(undefined)}});});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
+
+it('opens the exact file, model version and creator through the native actions',()=>{
+ render(<Host/>);
+ fireEvent.click(screen.getByRole('button',{name:fox.name}));
+ const dialog=within(screen.getByRole('dialog',{name:'Model details'}));
+ fireEvent.click(dialog.getByRole('button',{name:fox.path}));
+ fireEvent.click(dialog.getByRole('button',{name:'View on Civitai'}));
+ fireEvent.click(dialog.getByRole('button',{name:'FixtureCreator'}));
+ expect(invoke).toHaveBeenCalledWith('native_media_reveal',{path:fox.path});
+ expect(invoke).toHaveBeenCalledWith('native_open_civitai_model',{modelId:1,versionId:1,nsfw:true});
+ expect(invoke).toHaveBeenCalledWith('native_open_civitai_creator',{username:'FixtureCreator',nsfw:true});
+ fireEvent.click(dialog.getByRole('button',{name:'Close model details'}));
+ fireEvent.click(screen.getByRole('button',{name:lamp.name}));
+ expect(screen.queryByRole('button',{name:'View on Civitai'})).toBeNull();
+});
 
 it('searches metadata and trigger words, filters folders and bases, and keeps favorites',async()=>{
  render(<Host/>);

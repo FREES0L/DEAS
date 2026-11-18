@@ -1,4 +1,4 @@
 [[permission]]
 identifier = "allow-native-open-token-page"
-description = "Open a fixed provider token page in the system browser; no URL comes from the UI."
-commands.allow = ["native_open_token_page"]
+description = "Open provider token pages and CivitAI pages constructed from validated IDs in the system browser."
+commands.allow = ["native_open_token_page", "native_open_civitai_model", "native_open_civitai_creator"]

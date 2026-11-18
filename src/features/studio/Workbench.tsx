@@ -1,5 +1,6 @@
 import { PromptTagOptions } from './PromptTagOptions';
 import { ImageReferencesManager } from './ImageReferencesManager';
+import { rememberH3ReferenceDraft, restoreH3ReferenceDraft } from './h3ReferenceDrafts';
 import { ReferenceAssignmentBar } from './ReferenceAssignmentBar';
 import { StudioSelectionTools } from './StudioSelectionTools';
 import { BulkFamilyDialog,familyEditable } from './BulkFamilyDialog';
@@ -31,6 +32,7 @@ import { RunPlan } from './RunPlan';
 import { DownloadPanel } from '../downloads/DownloadPluginPanel';
 import { ContinuityOverlay } from './ContinuityOverlay';
 import { ReferencesOverlay } from './ReferencesOverlay';
+import { ReferenceEditorDialog } from './ReferenceEditorDialog';
 import { ReferenceThumbnail } from './ReferenceThumbnail';
 import { videoRoles, videoRoleBlock, videoRolePipeline, type VideoRole, type VideoRoles } from './videoRoles';
 import { defaultPlan, isContinuityPlan, nextStep, resolveClip, continuitySource, type ContinuityPlan } from '../../lib/continuity';
@@ -167,13 +169,13 @@ const isMusicGeneration=inBounds<MusicGenerationSettings>(musicBounds.generation
 const isMusicDuration=(v:unknown):v is {t2m:number;cover:number}=>!!v&&typeof v==='object'&&(['t2m','cover'] as const).every(k=>{const n=(v as Record<string,unknown>)[k];return typeof n==='number'&&n>=musicMaxDuration.step&&n<=musicMaxDuration.limit;});
 /** Edits of the shown image: plain image-to-image (`resample`) or inpaint; refine/upscale live in the Post-Processing tab. */
 const editModes=['resample','inpaint'] as const;
-export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void }
+export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void }
 /** Text-to-image workbench: settings left, preview over the prompts, queue right, bottom dock with Media · Models · LoRAs tabs. */
 export function Workbench(props:WorkbenchProps){
  const [project,setProject]=useState<ProjectSnapshot|null>(null);
  return <PreferencePersistenceContext.Provider value={!project&&!props.beginner}><WorkbenchContent {...props} project={project} onProject={setProject}/></PreferencePersistenceContext.Provider>;
 }
-function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage,endpoint,roots={},root,incoming,onCanvasContext,chatRender,onChatRender,onChatStudio,onAnalyze,onFrameActions,onOpenVideoPost,forgeHost,forgeActive=true,onOpenPromptForge,onH3ForgeAvailable,planVisible=false,project,onProject}:WorkbenchProps&{project:ProjectSnapshot|null;onProject:(project:ProjectSnapshot|null)=>void}){
+function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage,endpoint,ownedBackend=false,roots={},root,incoming,onCanvasContext,chatRender,onChatRender,onChatStudio,onAnalyze,onFrameActions,onOpenVideoPost,forgeHost,forgeActive=true,onOpenPromptForge,onH3ForgeAvailable,planVisible=false,project,onProject}:WorkbenchProps&{project:ProjectSnapshot|null;onProject:(project:ProjectSnapshot|null)=>void}){
  const {t,locale}=useI18n();const native=isTauri();const linuxVideo=nativeVideo();const modelsDir=roots.models;const outputDir=roots.output;const extraModelsKey=(roots.extraModels??[]).join('\n');
  const [media,setMedia]=useState<MediaItem|null>(null);
  const [browsed,setBrowsed]=useState<MediaItem|null>(null);
@@ -360,6 +362,10 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [sourceVideo,setSourceVideo]=useState<MediaItem|null>(null);
  const [sourceVideoSize,setSourceVideoSize]=useState<(Size&{src:string})|null>(null);
  const [rolePick,setRolePick]=useState<MediaItem|null>(null);
+ const [referenceDrops,setReferenceDrops]=useState<MediaItem[]>([]);
+ const pendingReference=referenceDrops[0];
+ const stageReferenceDrops=(items:MediaItem[])=>setReferenceDrops(queue=>[...queue,...items].slice(0,16));
+ const nextReferenceDrop=()=>setReferenceDrops(queue=>queue.slice(1));
  // H3 Image → Video with the picked image as last frame only (L2VA): holds that image's src while it is both input and last frame.
  const [lastOnlySrc,setLastOnlySrc]=useState<string|null>(null);
  // shortcut: source URLs identify frame pictures; use asset revisions when same-path edits are supported.
@@ -378,7 +384,9 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [h3Scaling,setH3Scaling]=usePref<H3Scaling>('studio.run.video.h3Scaling','Fill and crop',oneOf(...h3Scalings));
  // MiniMax H3 continuity plan (overlay): steps run one by one, each pinning the clip the previous one produced.
  const [plan,setPlan]=usePref('studio.run.continuity',defaultPlan(),isContinuityPlan);
- const [referencesOpen,setReferencesOpen]=useState(false);const referencesButton=useRef<HTMLButtonElement>(null);
+ const [referencesOpen,setReferencesOpen]=useState(false);
+ useEffect(()=>{if(!referencesOpen)setReferenceDrops([]);},[referencesOpen]);
+const referencesButton=useRef<HTMLButtonElement>(null);
  const [continuityOpen,setContinuityOpen]=useState(false);const continuityButton=useRef<HTMLButtonElement>(null);
  const [dialsOpen,setDialsOpen]=useState(false);
  const dialsButton=useRef<HTMLButtonElement>(null),dialsDialog=useRef<HTMLDialogElement>(null),dialsClose=useRef<HTMLButtonElement>(null);
@@ -1539,16 +1547,24 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   return videoRoleBlock(family?.video,role,item,state);
  };
  const assignVideoRole=(role:VideoRole,item:MediaItem)=>{
-  const reason=role==='reference'?refBlock(item):roleBlocked(role,item);if(reason){setError(t(reason));return;}
-  if(role==='reference'){addRefs([{item}]);return;}
-  if(role==='source'){updateVideoMode({source:true},()=>{setSourceVideo(item);if(media?.media!=='image')select(item);if(historyDraft)setHistorySourceSelected(true);});return;}
-  if(role==='first'||role==='both')updateVideoMode({first:true,last:role==='both'||!!lastFrame&&lastFrame.src!==item.src},()=>{select(item);setLastOnlySrc(null);if(role==='both')setLastFrame(item);else if(lastFrame?.src===item.src)setLastFrame(null);});
-  else updateVideoMode({first:!!firstFrame&&firstFrame.src!==item.src,last:true},()=>{if(!firstFrame||firstFrame.src===item.src){select(item);setLastOnlySrc(item.src);}setLastFrame(item);});
+  const reason=role==='reference'?refBlock(item):roleBlocked(role,item);if(reason){setError(t(reason));return false;}
+  if(role==='reference')return addRefs([{item}]);
+  if(role==='source')return updateVideoMode({source:true},()=>{setSourceVideo(item);if(media?.media!=='image')select(item);if(historyDraft)setHistorySourceSelected(true);});
+  if(role==='first'||role==='both')return updateVideoMode({first:true,last:role==='both'||!!lastFrame&&lastFrame.src!==item.src},()=>{select(item);setLastOnlySrc(null);if(role==='both')setLastFrame(item);else if(lastFrame?.src===item.src)setLastFrame(null);});
+  return updateVideoMode({first:!!firstFrame&&firstFrame.src!==item.src,last:true},()=>{if(!firstFrame||firstFrame.src===item.src){select(item);setLastOnlySrc(item.src);}setLastFrame(item);});
  };
  const removeVideoRole=(role:'first'|'last'|'source')=>{
   updateVideoMode({[role]:false},()=>{if(role==='first'){clearSource();setLastOnlySrc(null);}else if(role==='last'){setLastFrame(null);if(lastOnly){clearSource();setLastOnlySrc(null);}}else{setSourceVideo(null);if(media?.media==='video')clearSource();}});
  };
- const videoRoleEditor=(compact=false)=>compact?<ReferenceAssignmentBar selected={rolePick} actions={videoRoles.map(role=>{const reason=role==='reference'&&rolePick?refBlock(rolePick):roleBlocked(role,rolePick);return {id:role,label:t(`studio.run.video.roles.${role}`),reason:reason?t(reason):undefined,assign:()=>{if(rolePick)assignVideoRole(role,rolePick);}};})}>{([['first',firstFrame],['last',lastFrame],['source',sourceVideo??(family?.video?.roles.includes('source')?videoSource:null)]] as const).map(([role,item])=>item&&<div className="reference-role-chip" key={role} data-video-role-card={role}><span>{t(`studio.run.video.roles.${role}`)}</span><strong title={item.name}>{item.name}</strong><button type="button" data-video-role-remove={role} aria-label={t('studio.run.video.roles.remove',{role:t(`studio.run.video.roles.${role}`)})} onClick={()=>removeVideoRole(role)}>×</button></div>)}{pipeline==='v2v'&&!sourceVideo&&!family?.video?.roles.includes('source')&&videoSource&&<div className="reference-role-chip"><span>{t('studio.run.video.roles.reference')}</span><strong title={videoSource.name}>{videoSource.name}</strong><button type="button" aria-label={t('studio.run.video.roles.remove',{role:t('studio.run.video.roles.reference')})} onClick={()=>updateVideoMode({references:refs.length+refmods.length},()=>{clearSource();setSourceVideo(null);})}>×</button></div>}</ReferenceAssignmentBar>:<fieldset className="wb-group" data-video-roles><legend>{t('studio.run.video.roles.title')}</legend>
+ const videoAssignmentActions=(item:MediaItem|null,complete?:(role:VideoRole)=>void)=>videoRoles
+  .filter(role=>!isH3Video(videoFamily)||!item||role==='reference'||(role==='source'?item.media==='video':item.media==='image'))
+  .map(role=>{
+  const reason=role==='reference'&&item?refBlock(item):roleBlocked(role,item);
+  return {id:role,label:t(`studio.run.video.roles.${role}`),reason:reason?t(reason):undefined,assign:()=>{
+   if(item&&assignVideoRole(role,item))complete?.(role);
+  }};
+ });
+ const videoRoleEditor=(compact=false)=>compact?<ReferenceAssignmentBar selected={rolePick} actions={videoAssignmentActions(rolePick)}>{([['source',sourceVideo??(family?.video?.roles.includes('source')?videoSource:null)]] as const).map(([role,item])=>item&&<div className="reference-role-chip" key={role} data-video-role-card={role}><span>{t(`studio.run.video.roles.${role}`)}</span><strong title={item.name}>{item.name}</strong><button type="button" data-video-role-remove={role} aria-label={t('studio.run.video.roles.remove',{role:t(`studio.run.video.roles.${role}`)})} onClick={()=>removeVideoRole(role)}>×</button></div>)}{pipeline==='v2v'&&!sourceVideo&&!family?.video?.roles.includes('source')&&videoSource&&<div className="reference-role-chip"><span>{t('studio.run.video.roles.reference')}</span><strong title={videoSource.name}>{videoSource.name}</strong><button type="button" aria-label={t('studio.run.video.roles.remove',{role:t('studio.run.video.roles.reference')})} onClick={()=>updateVideoMode({references:refs.length+refmods.length},()=>{clearSource();setSourceVideo(null);})}>×</button></div>}</ReferenceAssignmentBar>:<fieldset className="wb-group" data-video-roles><legend>{t('studio.run.video.roles.title')}</legend>
   <p className="field-help">{rolePick?.name??t('studio.run.video.roles.pick')}</p>{rolePick&&<div className="reference-thumb"><ReferenceThumbnail reference={{item:rolePick,second:0,strength:1,mediaMode:'video'}}/></div>}
   <div className="wb-ref-toolbar">{videoRoles.map(role=>{const reason=role==='reference'&&rolePick?refBlock(rolePick):roleBlocked(role,rolePick);return <button key={role} type="button" className="wb-dock-action" data-video-role={role} disabled={!!reason} title={reason?t(reason):undefined} onClick={()=>{if(rolePick)assignVideoRole(role,rolePick);}}>{t(`studio.run.video.roles.${role}`)}</button>;})}</div>
   {([['first',firstFrame],['last',lastFrame],['source',sourceVideo??(family?.video?.roles.includes('source')?videoSource:null)]] as const).map(([role,item])=>item&&<div className="wb-ref" key={role} data-video-role-card={role}>
@@ -1600,6 +1616,29 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const togglePromptRef=(item:MediaItem&{path:string})=>{const at=imageRefs.findIndex(r=>r.item.path===item.path);if(at>=0){setImageRefs(v=>v.filter((_,j)=>j!==at));return;}addPromptRef(item);};
  /** Clearing <Picture 1> promotes the first reference to the source, so Picture 1 stays filled. */
  const useAsSource=(item:MediaItem,at=imageRefs.findIndex(r=>r.item.src===item.src))=>{if(at>=0)setImageRefs(v=>h3Refs&&media?v.map((r,j)=>j===at?{...r,item:{...media}}:r):v.filter((_,j)=>j!==at));select(item);};
+ const imageReferenceReason=(item:MediaItem)=>media?.path===item.path?t('studio.run.reference.sourceCard'):
+  imageRefs.length>=refMax?t('studio.run.reference.max',{count:imageRefs.length,max:refMax}):'';
+ const addImageDropReference=(item:MediaItem)=>setImageRefs(current=>
+  current.length>=refMax?current:[...current,{item,strength:0.6}]);
+ const hasImageReferences=isVideo?refs.some(({item})=>item.media==='image'):imageRefs.length>0;
+ const canAutoAssign=!!(referencesOpen&&pendingReference?.media==='image'&&hasImageReferences&&
+  (isVideo?!refBlock(pendingReference):validReference(pendingReference)&&!imageReferenceReason(pendingReference)));
+ useEffect(()=>{
+  if(!pendingReference||!canAutoAssign)return;
+  if(isVideo)assignVideoRole('reference',pendingReference);
+  else addImageDropReference(pendingReference);
+  nextReferenceDrop();
+ },[pendingReference,canAutoAssign,isVideo]);
+ const pendingActions=pendingReference?(isVideo?videoAssignmentActions(pendingReference,nextReferenceDrop):[
+  {id:'source',label:t('studio.run.reference.useSource'),assign:()=>{useAsSource(pendingReference);nextReferenceDrop();}},
+  {id:'reference',label:t('studio.run.video.roles.reference'),reason:imageReferenceReason(pendingReference),
+   assign:()=>{addImageDropReference(pendingReference);nextReferenceDrop();}},
+ ]):[];
+ const dropPrompt=pendingReference&&!canAutoAssign?<ReferenceEditorDialog assignment key={pendingReference.path}
+  name={pendingReference.name} heading={t('studio.run.reference.assignDrop')}
+  onClose={nextReferenceDrop} restoreFocus={()=>null}>
+  <ReferenceAssignmentBar prompt videoRoles={isVideo} selected={pendingReference} actions={pendingActions}/>
+ </ReferenceEditorDialog>:null;
  const clearH3Source=()=>{const[first,...rest]=imageRefs;if(!first){clearSource();return;}setImageRefs(rest);select(first.item);};
  const changeMusicSource=(item:MediaItem|null)=>{setMusicSource(item);if(item)setPipeline('cover');else if(model&&!blocked(model,'t2m'))setPipeline('t2m');if(historyDraft)setHistorySourceSelected(!!item);};
  const inputActions=(item:MediaItem):MediaAction[]=>!item.path?[]:isVideo?[...(lastFrame?.src===item.src?[{label:t('studio.run.video.removeLast'),input:true,onClick:()=>removeVideoRole('last')}]:[]),...(isRef(item)?[{label:t('studio.run.video.removeRef',{name:item.name}),input:true,onClick:()=>toggleRef(item)}]:[]),...videoRoles.filter(role=>role==='reference'||(role==='source'?item.media==='video':item.media==='image')).map(role=>({label:t(`studio.run.video.${({first:'useFirst',last:'useLast',both:'useBoth',reference:'addRef',source:'useSource'} as const)[role]}`),input:true,onClick:()=>assignVideoRole(role,item),blocked:(role==='reference'?refBlock(item):roleBlocked(role,item))?t(role==='reference'?refBlock(item):roleBlocked(role,item)):undefined}))]
@@ -1690,6 +1729,41 @@ const promptTools=forgeContext&&<>
   if(model)outgoingDraft.current={scope,pipeline,model,capture:captureDraft};
   else if(outgoingDraft.current?.scope===scope)outgoingDraft.current.capture=captureDraft;
  });
+ // Persist file assignments only. Session drafts continue to own transient editor state and history.
+ const referenceDraftKind=isVideo&&isH3Video(videoFamily)?'video':h3Refs&&isImagePipe(pipeline)?'image':null;
+ const referenceDraftKey=native&&!beginner&&!project&&referenceDraftKind&&model
+  ?JSON.stringify([ownedBackend&&root?['owned',root]:['endpoint',endpoint],modelsDir,roots.input,outputDir,referenceDraftKind,identity(model)]):null;
+ const visitedReferenceDrafts=useRef(new Set<string>());
+ const [loadedReferenceDraft,setLoadedReferenceDraft]=useState<string|null>(null);
+ useLayoutEffect(()=>{
+  if(referenceDraftKey&&!visitedReferenceDrafts.current.has(referenceDraftKey)){
+   visitedReferenceDrafts.current.add(referenceDraftKey);
+   const saved=restoreH3ReferenceDraft(referenceDraftKey);
+   if(saved&&!historyDraft){
+    sourceEpoch.current++;setMedia(saved.source);setMediaSize(null);
+    setEditorSnapshot(undefined);setLayers([]);setMasked(false);
+    if(saved.kind==='image')setImageRefs(saved.refs);
+    else {
+     setPipeline(saved.mode);
+     setRefs(saved.refs);setRefmods(saved.mods);setLastFrame(saved.last);
+     setSourceVideo(saved.sourceVideo);setSourceVideoSize(null);
+     setLastOnlySrc(saved.lastOnly?saved.source?.src??null:null);
+     setFramePeople({...saved.source&&saved.firstPeople?{[saved.source.src]:saved.firstPeople}:{},
+      ...saved.last&&saved.lastPeople?{[saved.last.src]:saved.lastPeople}:{}});
+    }
+   }
+  }
+  setLoadedReferenceDraft(referenceDraftKey);
+ },[referenceDraftKey]);
+ useEffect(()=>{
+  if(!referenceDraftKey||loadedReferenceDraft!==referenceDraftKey||historyDraft)return;
+  if(referenceDraftKind==='image')rememberH3ReferenceDraft(referenceDraftKey,{kind:'image',source:media,refs:imageRefs});
+  if(referenceDraftKind==='video')rememberH3ReferenceDraft(referenceDraftKey,{
+   kind:'video',mode:pipeline==='i2v'||pipeline==='v2v'||pipeline==='ref2v'?pipeline:'t2v',
+   source:media,last:lastFrame,sourceVideo,lastOnly:!!lastOnlySrc,refs,mods:refmods,
+   firstPeople:media?framePeople[media.src]:undefined,lastPeople:lastFrame?framePeople[lastFrame.src]:undefined,
+  });
+ },[referenceDraftKey,loadedReferenceDraft,referenceDraftKind,historyDraft,pipeline,media,imageRefs,lastFrame,sourceVideo,lastOnlySrc,refs,refmods,framePeople]);
  const startingSettings=(m:LocalModel,seedNegative=false)=>{setLyingSigma({...defaultLyingSigma});setResolution('model');const profile=aceMusicProfile(m.family);if(profile){setAceProfilePref(JSON.stringify([m.path,m.family]));setMusicAce({...defaultAceSettings,shift:profile.shift});setAceDuration(normalizeAceDuration(120,m.family));}const d=profile??familyOf(m)?.defaults;if(d){if('width' in d){setWidth(d.width);setHeight(d.height);}setSteps(d.steps);setCfg(d.cfg);setSampler(d.sampler);setScheduler(d.scheduler);if(seedNegative&&'negative' in d&&typeof d.negative==='string'&&!negative.trim())setNegative(d.negative);}};
  // A new or corrected variant gets its own profile; persisted overrides keep their binding.
  useLayoutEffect(()=>{if(aceProfile&&model&&aceProfilePref!==JSON.stringify([model.path,model.family])){startingSettings(model);setCheckpoint(model.name);setModelIdentity(identity(model));}},[aceProfile?.version,model?.path,model?.family,aceProfilePref]);
@@ -2430,8 +2504,8 @@ const promptTools=forgeContext&&<>
   {visionDownload&&<dialog ref={visionDialog} data-vision-download className="continuity-overlay" aria-label={t("studio.run.reference.dlAsk")} onCancel={e=>{e.preventDefault();closeVisionDownload();}}><header className="continuity-overlay-header"><h2>{t("studio.run.reference.dlAsk")}</h2><button type="button" onClick={closeVisionDownload}>{t("studio.close")}</button></header><div className="wb-dock-panel"><p>{t("studio.run.latent.consent")}</p><DownloadPanel embedded installTarget={root} modelsDir={modelsDir} initialEntryIds={visionIds} filenameFilter={["clip_vision_g.safetensors"]} onStatus={visionDownloadStatus}/></div></dialog>}
  {latentDownload&&<dialog ref={latentDialog} data-latent-upscale-download className="continuity-overlay" aria-label={t('studio.run.latent.download')} onCancel={e=>{e.preventDefault();closeLatentDownload();}}><header className="continuity-overlay-header"><h2>{t('studio.run.latent.download')}</h2><button type="button" onClick={closeLatentDownload}>{t('studio.close')}</button></header><div className="wb-dock-panel"><p>{t('studio.run.latent.consent')}</p><DownloadPanel embedded installTarget={root} modelsDir={modelsDir} initialEntryIds={latentIds} filenameFilter={latentDownload==='minimax-h3'?['minimax_h3_latent_upscaler_2d_conv_v1_fp16.safetensors','minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors','MiniMax H3 Latent Upscaler.safetensors','minimax h3 latent upscaler.safetensors','minimax_h3_latent_upscaler.safetensors']:['ltx-2.3-spatial-upscaler-x2-1.1.safetensors','LTX-2.3-Latent-Upscaler.safetensors']} onStatus={latentDownloadStatus}/></div></dialog>}
  {loraSetsOpen&&<LoraSetsDialog root={modelsDir??endpoint} selected={loras} active={activeLoras.map(l=>l.name)} models={allLoraModels} onChange={setLoras} usable={m=>supportedLoraFormat(m)&&checkLoraForExecution(m).compatibility!=='blocked'} onClose={()=>setLoraSetsOpen(false)} onBrowse={()=>{setLoraSetsOpen(false);setDockTab('loras');}}/>}
- {referencesOpen&&refsTab&&!planVisible&&<ReferencesOverlay manager={isH3Video(videoFamily)} subtitle={family?.name} pickerHint={t('studio.run.video.roles.pick')} onClose={()=>{setReferencesOpen(false);referencesButton.current?.focus();}} picker={<MediaPanel toolbar={error?<p role="alert" className="error-message">{backendErrorText(error,t)}</p>:undefined} selected={rolePick} onSelect={setRolePick} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} marks={marks} actions={mediaActions}/>}>{!isH3Video(videoFamily)&&videoRoleEditor()}{refmods.length>0&&!isH3Video(videoFamily)&&<div className="wb-ref"><p>{t('studio.run.video.roles.unsupported')}</p><button type="button" className="wb-dock-action" data-video-refmods-clear onClick={()=>updateVideoMode({references:refs.length},()=>setRefmods([]))}>{t('studio.run.video.roles.remove',{role:t('studio.run.video.refmods')})}</button></div>}{(family?.video?.roles.includes('reference')||refs.length>0)&&<ReferencesPanel manager={isH3Video(videoFamily)} assignment={isH3Video(videoFamily)?videoRoleEditor(true):undefined} endpoint={endpoint} root={root} refs={refs} onChange={changeRefs} family={isH3Video(videoFamily)?videoFamily:'ltx-2'} seconds={video.seconds} label={refLabel} onAdd={addRefs} onPack={(adds,mods,replace)=>addRefs(adds,replace,mods)} inputRoot={roots.input} outputRoot={outputDir} refmods={refmods} onRefmods={next=>{if(next.length&&!family?.video?.mixReferences&&(firstFrame||lastFrame)){setError(t('studio.run.video.roles.mixing'));return;}updateVideoMode({references:roleReferenceCounts.current.refs+next.length},()=>{roleReferenceCounts.current.mods=next.length;setRefmods(next);});}} library={native&&endpoint.trim()?()=>readRefMods(endpoint):undefined} refmodCreate={native&&endpoint.trim()&&isH3Video(videoFamily)?{vae,audioVae,modelsDir:roots.models,vaes:family?componentFiles(models??[],family,'vaes'):[],audioVaes:family?componentFiles(models??[],family,'audioVaes'):[],upload:path=>uploadInput(endpoint,path)}:undefined} onInsert={insertTag}/>}</ReferencesOverlay>}
- {referencesOpen&&imageRefsButton&&<ReferencesOverlay manager={h3Refs} imageEdit={h3Refs} subtitle={h3Refs?`${family?.name} · ${t('studio.run.pipe.i2i')}`:undefined} onClose={()=>{setReferencesOpen(false);referencesButton.current?.focus();}} picker={<MediaPanel toolbar={error?<p role="alert" className="error-message">{backendErrorText(error,t)}</p>:undefined} selected={h3Refs?imageReferencePick:null} onSelect={item=>{if(h3Refs)setImageReferencePick(item);else if(item.path&&validReference(item))togglePromptRef(item as MediaItem&{path:string});}} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} marks={marks} actions={mediaActions}/>}>{h3Refs?<ImageReferencesManager source={media} refs={imageRefs} selected={imageReferencePick} max={refMax} valid={validReference} onAdd={addH3ImageRefs} onSource={useAsSource} onClearSource={clearH3Source} onChange={setImageRefs} onInsert={insertTag} onReplace={replaceHistoryReference} replaceAllowed={historyReferenceCompatible}/>:<div className="wb-image-references" data-image-references>{imageRefBar()}</div>}</ReferencesOverlay>}
+ {referencesOpen&&refsTab&&!planVisible&&<ReferencesOverlay dropPrompt={dropPrompt} onDropItems={isH3Video(videoFamily)?stageReferenceDrops:undefined} manager={isH3Video(videoFamily)} subtitle={family?.name} pickerHint={t('studio.run.video.roles.pick')} onClose={()=>{setReferencesOpen(false);referencesButton.current?.focus();}} picker={<MediaPanel toolbar={error?<p role="alert" className="error-message">{backendErrorText(error,t)}</p>:undefined} selected={rolePick} onSelect={setRolePick} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} marks={marks} actions={mediaActions}/>}>{!isH3Video(videoFamily)&&videoRoleEditor()}{refmods.length>0&&!isH3Video(videoFamily)&&<div className="wb-ref"><p>{t('studio.run.video.roles.unsupported')}</p><button type="button" className="wb-dock-action" data-video-refmods-clear onClick={()=>updateVideoMode({references:refs.length},()=>setRefmods([]))}>{t('studio.run.video.roles.remove',{role:t('studio.run.video.refmods')})}</button></div>}{(family?.video?.roles.includes('reference')||refs.length>0)&&<ReferencesPanel manager={isH3Video(videoFamily)} frames={{first:firstFrame,last:lastFrame,onRemove:removeVideoRole}} assignment={isH3Video(videoFamily)?videoRoleEditor(true):undefined} endpoint={endpoint} root={root} refs={refs} onChange={changeRefs} family={isH3Video(videoFamily)?videoFamily:'ltx-2'} seconds={video.seconds} label={refLabel} onAdd={addRefs} onPack={(adds,mods,replace)=>addRefs(adds,replace,mods)} inputRoot={roots.input} outputRoot={outputDir} refmods={refmods} onRefmods={next=>{if(next.length&&!family?.video?.mixReferences&&(firstFrame||lastFrame)){setError(t('studio.run.video.roles.mixing'));return;}updateVideoMode({references:roleReferenceCounts.current.refs+next.length},()=>{roleReferenceCounts.current.mods=next.length;setRefmods(next);});}} library={native&&endpoint.trim()?()=>readRefMods(endpoint):undefined} refmodCreate={native&&endpoint.trim()&&isH3Video(videoFamily)?{vae,audioVae,modelsDir:roots.models,vaes:family?componentFiles(models??[],family,'vaes'):[],audioVaes:family?componentFiles(models??[],family,'audioVaes'):[],upload:path=>uploadInput(endpoint,path)}:undefined} onInsert={insertTag}/>}</ReferencesOverlay>}
+ {referencesOpen&&imageRefsButton&&<ReferencesOverlay dropPrompt={dropPrompt} onDropItems={h3Refs?stageReferenceDrops:undefined} manager={h3Refs} imageEdit={h3Refs} subtitle={h3Refs?`${family?.name} · ${t('studio.run.pipe.i2i')}`:undefined} onClose={()=>{setReferencesOpen(false);referencesButton.current?.focus();}} picker={<MediaPanel toolbar={error?<p role="alert" className="error-message">{backendErrorText(error,t)}</p>:undefined} selected={h3Refs?imageReferencePick:null} onSelect={item=>{if(h3Refs)setImageReferencePick(item);else if(item.path&&validReference(item))togglePromptRef(item as MediaItem&{path:string});}} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} marks={marks} actions={mediaActions}/>}>{h3Refs?<ImageReferencesManager managedDrops source={media} refs={imageRefs} selected={imageReferencePick} max={refMax} valid={validReference} onAdd={addH3ImageRefs} onSource={useAsSource} onClearSource={clearH3Source} onChange={setImageRefs} onInsert={insertTag} onReplace={replaceHistoryReference} replaceAllowed={historyReferenceCompatible}/>:<div className="wb-image-references" data-image-references>{imageRefBar()}</div>}</ReferencesOverlay>}
  {/* Keep H3 editors with their Workbench state; only their DOM lives in the retained Forge tab. */}
  {forgeHost&&forgeContext&&createPortal(<section className="forge-tab" aria-label={t('studio.tab.forge')} data-h3-forge-tab>
   <ForgeButton inline active={forgeActive} endpoint={endpoint} root={root} dialect={dialectOf(model?.family)} value={positive} onApply={setPositive} h3={forgeContext} tools={promptTools}/>

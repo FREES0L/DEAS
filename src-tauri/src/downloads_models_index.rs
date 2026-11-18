@@ -76,7 +76,10 @@ struct Index {
     records: Vec<Record>,
 }
 
-const PREVIEW_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
+pub(super) const PREVIEW_EXTENSIONS: &[&str] =
+    &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
+
+const MAX_DISPLAY_PREVIEW: u64 = 32 * 1024 * 1024;
 
 fn absolute_path_valid(path: &Path) -> bool {
     path.is_absolute()
@@ -107,8 +110,52 @@ fn preview_path_valid(model: &str, preview: &str) -> bool {
 }
 
 type PreviewFolders = HashMap<PathBuf, HashMap<String, String>>;
+
+fn preview_bases(path: &Path) -> Option<[String; 3]> {
+    let stem = path.file_stem()?.to_str()?;
+    let full = path.file_name()?.to_str()?;
+    Some([
+        format!("{stem}.preview"),
+        stem.into(),
+        format!("{full}.preview"),
+    ])
+}
+
+pub(super) fn find_local_preview(path: &Path) -> Option<String> {
+    selected_preview(path, MAX_DISPLAY_PREVIEW)
+}
+
+pub(super) fn has_local_preview(path: &Path) -> bool {
+    selected_preview(path, u64::MAX).is_some()
+}
+
+#[cfg(windows)]
+fn selected_preview(path: &Path, max_bytes: u64) -> Option<String> {
+    let source = Source::open(path).ok()?;
+    for base in preview_bases(path)? {
+        for ext in PREVIEW_EXTENSIONS {
+            let name = format!("{base}.{ext}");
+            if source
+                .dir
+                .regular(&name)
+                .ok()
+                .and_then(|file| file.metadata().ok())
+                .is_some_and(|meta| (1..=max_bytes).contains(&meta.len()))
+            {
+                source.verify().ok()?;
+                return path.with_file_name(name).to_str().map(str::to_owned);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+fn selected_preview(path: &Path, max_bytes: u64) -> Option<String> {
+    local_preview(path, &mut PreviewFolders::new(), max_bytes)
+}
 // Directory names are read once per worker/folder during explicit refresh only.
-fn local_preview(path: &Path, folders: &mut PreviewFolders) -> Option<String> {
+fn local_preview(path: &Path, folders: &mut PreviewFolders, max_bytes: u64) -> Option<String> {
     let parent = path.parent()?;
     let names = folders.entry(parent.into()).or_insert_with(|| {
         let mut names = HashMap::new();
@@ -128,19 +175,13 @@ fn local_preview(path: &Path, folders: &mut PreviewFolders) -> Option<String> {
         }
         names
     });
-    let stem = path.file_stem()?.to_string_lossy();
-    let full = path.file_name()?.to_string_lossy();
-    for base in [
-        format!("{stem}.preview"),
-        stem.into_owned(),
-        format!("{full}.preview"),
-    ] {
+    for base in preview_bases(path)? {
         for ext in PREVIEW_EXTENSIONS {
             if let Some(name) = names.get(&format!("{base}.{ext}").to_lowercase()) {
                 let source = Source::open(path).ok()?;
                 if let Ok(file) = source.dir.regular(name) {
                     let size = file.metadata().ok()?.len();
-                    if size > 0 && size <= 32 * 1024 * 1024 && source.verify().is_ok() {
+                    if size > 0 && size <= max_bytes && source.verify().is_ok() {
                         return Some(path.with_file_name(name).to_string_lossy().into_owned());
                     }
                 }
@@ -225,6 +266,83 @@ pub fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())
 }
 
+pub(super) fn file_members(
+    directory: &Path,
+    root: &Path,
+) -> Result<HashMap<PathBuf, (String, SourceFingerprint)>, String> {
+    let roots = [root.to_path_buf()];
+    let index = read(&index_path(directory, &roots)?, &roots)
+        .ok_or("Refresh models before editing library files")?;
+    Ok(index
+        .records
+        .into_iter()
+        .filter_map(|record| {
+            Some((
+                PathBuf::from(record.model.path),
+                (record.model.category, record.stamp?.model),
+            ))
+        })
+        .collect())
+}
+
+pub(super) fn apply_file_changes(
+    directory: &Path,
+    changes: &[super::files::FileChange],
+) -> Result<(), String> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let _guard = REFRESH
+        .lock()
+        .map_err(|_| "Model index update lock failed")?;
+    let changes: HashMap<_, _> = changes
+        .iter()
+        .map(|change| (Path::new(&change.old), change))
+        .collect();
+    for entry in std::fs::read_dir(directory)
+        .map_err(|e| e.to_string())?
+        .take(128)
+    {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let index_path = entry.path();
+        if !entry.file_name().to_string_lossy().starts_with("models-")
+            || index_path.extension().is_none_or(|ext| ext != "json")
+        {
+            continue;
+        }
+        let Some(mut index) = read_any(&index_path) else {
+            continue;
+        };
+        let mut changed = false;
+        index.records.retain_mut(|record| {
+            let Some(change) = changes.get(Path::new(&record.model.path)) else {
+                return true;
+            };
+            changed = true;
+            let (Some(path), Some(name)) = (&change.path, &change.name) else {
+                return false;
+            };
+            record.model.path = path.clone();
+            record.model.name = name.clone();
+            record.model.local_preview = change.local_preview.clone();
+            record.stamp = stamp(Path::new(path)).ok();
+            true
+        });
+        if changed {
+            publish(&index_path, &index)?;
+        }
+    }
+    Ok(())
+}
+
+fn index_path(directory: &Path, roots: &[PathBuf]) -> Result<PathBuf, String> {
+    let key = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(roots).map_err(|e| e.to_string())?)
+    );
+    Ok(directory.join(format!("models-{key}.json")))
+}
+
 /// Patch one explicitly edited file into existing indexes; never walk model folders.
 pub fn update(directory: &Path, path: &Path) -> Result<(), String> {
     update_many(directory, &[path.to_path_buf()])
@@ -246,7 +364,7 @@ pub fn update_many(directory: &Path, paths: &[PathBuf]) -> Result<(), String> {
         let mut snapshot: SnapshotModel =
             serde_json::from_value(serde_json::to_value(model).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
-        snapshot.local_preview = local_preview(path, &mut folders);
+        snapshot.local_preview = local_preview(path, &mut folders, MAX_DISPLAY_PREVIEW);
         snapshots.insert(path.clone(), (snapshot, stamp(path).ok()));
     }
     for entry in std::fs::read_dir(directory)
@@ -313,11 +431,7 @@ pub fn load(
     if roots.is_empty() || roots.len() > 32 || roots.iter().any(|p| !absolute_path_valid(p)) {
         return Err("Invalid model index roots".into());
     }
-    let key = format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(&roots).map_err(|e| e.to_string())?)
-    );
-    let path = directory.join(format!("models-{key}.json"));
+    let path = index_path(directory, &roots)?;
     if !refresh {
         if let Some(index) = read(&path, &roots) {
             return Ok(payload(index));
@@ -368,15 +482,19 @@ pub fn load(
                             {
                                 if stamp.is_some() && stamp == saved.stamp {
                                     let mut saved = saved.clone();
-                                    saved.model.local_preview =
-                                        local_preview(path, &mut preview_folders);
+                                    saved.model.local_preview = local_preview(
+                                        path,
+                                        &mut preview_folders,
+                                        MAX_DISPLAY_PREVIEW,
+                                    );
                                     return Some(saved);
                                 }
                             }
                             let model = describe(category, base, path).ok()?;
                             let mut model: SnapshotModel =
                                 serde_json::from_value(serde_json::to_value(model).ok()?).ok()?;
-                            model.local_preview = local_preview(path, &mut preview_folders);
+                            model.local_preview =
+                                local_preview(path, &mut preview_folders, MAX_DISPLAY_PREVIEW);
                             model.details.added_at = old
                                 .get(&(category.to_string(), path.to_string_lossy().into_owned()))
                                 .and_then(|saved| saved.model.details.added_at)

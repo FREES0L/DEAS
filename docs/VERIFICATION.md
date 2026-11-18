@@ -1,5 +1,20 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Library, enhanced preview and H3 References
+
+The frontend build, 2,343 UI tests and 467 Chromium layout checks passed. Core
+checks recorded 166 passes and one skip. The Windows release build completed.
+The native Library model suite passed 65 tests with three ignored using a
+disposable fixture directory.
+
+H3 fixture coverage includes role assignment, automatic image additions,
+resetting after the last image reference is removed, mocked file-manager drop
+events and draft restoration. Chromium pointer tests covered the drag
+thumbnail, Escape, release outside the editor, the Media intake field and
+independent removal of first/last frame cards. The fixture ran at 1,440 px
+for H3 Video and Image Edit and at 690 px for H3 Video. Packaged Windows
+WebView2 and Linux WebKitGTK acceptance remains open.
+
 ## DEAS 0.3.1 — Slow local backend readiness
 
 Linux loopback HTTP fixtures verified owned startup with 2.25-second responses on both required endpoints, no retries, retained ownership and no generation-readiness claim. Separate inspection and recipe discovery fixtures accepted a 10.3-second `object_info` body. Tests also covered the existing overall startup cutoff, stopping during a probe, the shorter optional-feature timeout and DEAS-source timing logs. TypeScript, 167 core checks and strict Linux and Windows-target Clippy passed. The Linux build was staged as `artifacts/deas-linux-amd64` (SHA-256 `55f6941b0549d66751e154ecbf986310e94eaa8add7d81ec9768a2078695f63d`).

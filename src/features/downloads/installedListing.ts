@@ -26,7 +26,7 @@ export function clearInstalledListing() { listing=undefined; }
 if(typeof window!=='undefined')window.addEventListener('deas:model-family-changed',event=>{
  const model=(event as CustomEvent<LocalModel>).detail;
  listing?.updates?.push([model]);
- if(listing?.models)listing.models=listing.models.map(old=>old.path===model.path?{...model,addedAt:old.addedAt,localPreview:old.localPreview}:old);
+ if(listing?.models)listing.models=listing.models.map(old=>old.path===model.path?{...model,addedAt:old.addedAt,localPreview:model.localPreview??old.localPreview}:old);
 });
 
 if(typeof window!=='undefined')window.addEventListener(MODEL_LIBRARY_UPDATED,event=>{const change=(event as CustomEvent<ModelLibraryUpdate>).detail;if(listing&&change.updates&&modelPathKey(listing.root)===modelPathKey(change.root)){listing.updates?.push(change.updates);if(listing.models)listing.models=patchModels(listing.models,change.updates);}});

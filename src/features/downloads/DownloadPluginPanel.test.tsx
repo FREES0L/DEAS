@@ -476,7 +476,7 @@ it('lists installed models per folder and fetches CivitAI metadata by hash on re
  vi.mocked(invoke).mockImplementation(async(c,a)=>{
   if(c==='native_download_catalog')return catalog;
   if(c==='native_models_scan'){expect(a).toEqual({root:'/env/ComfyUI/models'});return [local,{...local,category:'vae',name:'v.pt',path:'/env/ComfyUI/models/vae/v.pt'}];}
-  if(c==='native_model_info'){const p=(a as {path:string}).path;expect(a).toEqual({path:p,authenticated:false});return p===local.path?fetched:{...local,category:'vae',name:'v.pt',path:'/env/ComfyUI/models/vae/v.pt',info:{sha256:'cd34',size:2097152,fetchedAt:1,civitai:null}};}
+  if(c==='native_model_info'){const p=(a as {path:string}).path;expect(a).toEqual({path:p,authenticated:false,savePreview:false});return p===local.path?fetched:{...local,category:'vae',name:'v.pt',path:'/env/ComfyUI/models/vae/v.pt',info:{sha256:'cd34',size:2097152,fetchedAt:1,civitai:null}};}
   if(c==='native_model_scan_status')return {id:'',root:'',state:'idle',file:null,completed:0,total:0,remaining:0,failed:0};
   if(c==='native_model_scan_start')return {id:'scan',root:'/env/ComfyUI/models',state:'running',file:local.path,completed:0,total:2,remaining:2,failed:0};
   if(c==='native_auth_status')return [{providerId:'civitai',configured:false,persisted:false}];
@@ -579,7 +579,7 @@ it('does not update or continue polling an unmounted scan view',async()=>{
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_model_scan_status')).toHaveLength(1);
 });
 
-it('starts a background Fetch for filtered indexed paths without a folder rescan and reloads the saved index on completion',async()=>{
+it.each([false,true])('passes the local preview preference (%s) to Fetch without rescanning the folder',async(savePreview)=>{
  const root='/env/ComfyUI/models';const local={category:'loras',name:'style.pt',path:root+'/loras/style.pt',size:7,info:null};
  let started=false;let done=false;
  vi.mocked(invoke).mockImplementation(async(c)=>{
@@ -593,12 +593,60 @@ it('starts a background Fetch for filtered indexed paths without a folder rescan
  render(<I18nProvider><DownloadPanel embedded installTarget="/env"/></I18nProvider>);tab('Installed');
  await screen.findByRole('button',{name:'style.pt'});
  const fetchButton=screen.getByRole('button',{name:'Fetch'});await waitFor(()=>expect(fetchButton).toHaveProperty('disabled',false));
- fireEvent.click(fetchButton);click('Start fetch');
- await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_model_scan_start',{root,scope:'all',authenticated:false,paths:[local.path],missingOnly:true}));
+ fireEvent.click(fetchButton);
+ const checkbox=screen.getByRole('checkbox',{name:'Save preview locally'});
+ expect(checkbox).toHaveProperty('checked',false);
+ if(savePreview)fireEvent.click(checkbox);
+ click('Start fetch');
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_model_scan_start',{root,scope:'all',authenticated:false,paths:[local.path],missingOnly:true,savePreview}));
  done=true;
  await waitFor(()=>expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(2),{timeout:2500});
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan').every(([,args])=>!(args as {refresh?:boolean}).refresh)).toBe(true);
  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_model_info'||c==='native_download_start')).toBe(false);
+});
+
+it('moves from a card menu and deletes a bulk selection only after confirmation',async()=>{
+ const root='/env/ComfyUI/models', destination=root+'/loras/new';
+ const models=['a.pt','b.pt','c.pt'].map(name=>({category:'loras',name,path:root+'/loras/'+name,size:7,info:null}));
+ const showModal=Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype,'showModal');
+ Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value(this:HTMLDialogElement){this.open=true;}});
+ try{
+  vi.mocked(invoke).mockImplementation(async(command,args)=>{
+   if(command==='native_download_catalog')return catalog;
+   if(command==='native_auth_status')return [];
+   if(command==='native_models_scan')return models;
+   if(command==='native_model_scan_status')return {state:'idle'};
+   if(command==='native_pick_directory')return destination;
+   if(command==='native_model_files_change'){
+    const {paths,destination}=args as {paths:string[];destination?:string};
+    return {errors:[],changes:paths.map(old=>({old,path:destination?destination+'/a.pt':null,name:destination?'new/a.pt':null,localPreview:null}))};
+   }
+   return null;
+  });
+  render(<I18nProvider><DownloadPanel embedded installTarget="/env"/></I18nProvider>);tab('Installed');
+  const card=await screen.findByRole('button',{name:'a.pt'});
+  fireEvent.contextMenu(card);
+  fireEvent.click(screen.getByRole('menuitem',{name:'Move to folder…'}));
+  await screen.findByRole('button',{name:'new/a.pt'});
+  expect(invoke).toHaveBeenCalledWith('native_model_files_change',{root,paths:[models[0].path],destination,confirmed:true});
+  click('Bulk select');
+  fireEvent.click(screen.getByRole('checkbox',{name:'Select b.pt'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'Select c.pt'}));
+  click('Delete…');
+  expect(vi.mocked(invoke).mock.calls.filter(([name])=>name==='native_model_files_change')).toHaveLength(1);
+  click('Cancel');
+  expect(screen.getByRole('button',{name:'b.pt'})).toBeTruthy();
+  click('Delete…');
+  fireEvent.click(document.querySelector('[data-confirm-dialog]')!);
+  await waitFor(()=>expect(screen.queryByRole('button',{name:'b.pt'})).toBeNull());
+  expect(screen.queryByRole('button',{name:'c.pt'})).toBeNull();
+  expect(screen.getByRole('button',{name:'new/a.pt'})).toBeTruthy();
+  expect(invoke).toHaveBeenCalledWith('native_model_files_change',{root,paths:models.slice(1).map(m=>m.path),destination:undefined,confirmed:true});
+  expect(vi.mocked(invoke).mock.calls.filter(([name])=>name==='native_models_scan')).toHaveLength(1);
+ }finally{
+  if(showModal)Object.defineProperty(HTMLDialogElement.prototype,'showModal',showModal);
+  else Reflect.deleteProperty(HTMLDialogElement.prototype,'showModal');
+ }
 });
 
 it('honors a newer anonymous choice when reopening a downloadable discovery card',async()=>{

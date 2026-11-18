@@ -161,8 +161,11 @@ test.each(['REF2VA','FL2VA'] as const)('HyperFlow %s follows the global pipeline
   for(const [name,media] of [['clip.mp4','video'],['voice.wav','audio']]){
    const item={name,media,path:`/env/ComfyUI/input/${name}`,src:`asset://${name}`};
    fireEvent.drop(document.querySelector('[data-references]')!,{dataTransfer:{types:['application/x-deas-media'],getData:()=>JSON.stringify(item)}});
-   expect(within(dialog).getByRole('alert').textContent).toContain('HyperFlow GGUF accepts image references only.');
+   const assignment=within(dialog).getByRole('dialog',{name:'Assign dropped file'});
+   expect(within(assignment).getByText('HyperFlow GGUF accepts image references only.')).toBeTruthy();
+   expect(assignment.querySelector('[data-video-role="reference"]')).toHaveProperty('disabled',true);
    expect(document.querySelectorAll('[data-ref]')).toHaveLength(1);
+   fireEvent.click(within(assignment).getByRole('button',{name:'Close'}));
   }
   fireEvent.click(within(dialog).getByRole('button',{name:'Close'}));
  }else{

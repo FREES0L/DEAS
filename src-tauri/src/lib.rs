@@ -37,6 +37,7 @@ pub mod downloads;
 pub use downloads::models::background::{
     native_model_scan_start, native_model_scan_status, ModelScanEngine,
 };
+pub use downloads::models::files::native_model_files_change;
 pub use downloads::models::{
     native_model_family_write, native_model_family_write_many, native_model_info,
     native_models_scan,
@@ -104,7 +105,9 @@ pub use media::{
 pub use media_metadata::native_media_metadata;
 pub use media_reference::native_media_reference_thumbnail;
 pub mod token_page;
-pub use token_page::native_open_token_page;
+pub use token_page::{
+    native_open_civitai_creator, native_open_civitai_model, native_open_token_page,
+};
 pub mod app_update;
 pub use app_update::{native_app_restart, native_app_update};
 pub mod repo;

@@ -419,4 +419,57 @@ impl Anchor {
         #[cfg(not(any(target_os = "linux", windows)))]
         let _ = name;
     }
+
+    // Callers pass validated basename components from verified directory handles.
+    pub(super) fn move_to(&self, name: &str, target: &Self) -> Result<(), String> {
+        self.writable()?;
+        target.writable()?;
+        #[cfg(target_os = "linux")]
+        {
+            let name = CString::new(name).map_err(|_| "Invalid model filename")?;
+            if unsafe {
+                libc::renameat2(
+                    self.0.as_raw_fd(),
+                    name.as_ptr(),
+                    target.0.as_raw_fd(),
+                    name.as_ptr(),
+                    libc::RENAME_NOREPLACE,
+                )
+            } != 0
+            {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            Ok(())
+        }
+        #[cfg(windows)]
+        {
+            crate::win::rename_no_replace(&self.child(name)?, &target.child(name)?)
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        {
+            let _ = name;
+            Err("Unsupported platform".into())
+        }
+    }
+
+    pub(super) fn delete_file(&self, name: &str) -> Result<(), String> {
+        self.writable()?;
+        #[cfg(target_os = "linux")]
+        {
+            let name = CString::new(name).map_err(|_| "Invalid model filename")?;
+            if unsafe { libc::unlinkat(self.0.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            Ok(())
+        }
+        #[cfg(windows)]
+        {
+            std::fs::remove_file(self.child(name)?).map_err(|error| error.to_string())
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        {
+            let _ = name;
+            Err("Unsupported platform".into())
+        }
+    }
 }

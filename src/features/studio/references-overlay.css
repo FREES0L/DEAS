@@ -4,6 +4,12 @@
 .references-picker .media-toolbar { flex-wrap: wrap; }
 .references-picker .media-toolbar input { min-width: 0; }
 .references-editor { min-height: 0; min-width: 0; overflow: auto; padding: 1rem; }
+.references-picker [data-reference-tile-drag] { cursor: grab; user-select: none; }
+.references-overlay[data-tile-drag], .references-overlay[data-tile-drag] * { cursor: grabbing; }
+.references-overlay[data-tile-drag="over"] .references-editor { outline: 2px solid var(--copper); outline-offset: -2px; }
+.reference-drag-preview { position: fixed; z-index: 2; pointer-events: none; opacity: .84; display: grid; gap: .2rem; width: 6rem; box-sizing: border-box; padding: .25rem; border: 1px solid var(--copper); border-radius: .4rem; background: var(--panel); color: var(--text); box-shadow: 0 .3rem 1rem rgb(var(--shadow-rgb) / .5); left: clamp(0px, calc(var(--tile-drag-x) + .8rem), calc(100vw - 6rem)); top: clamp(0px, calc(var(--tile-drag-y) + .8rem), calc(100dvh - 5rem)); }
+.reference-drag-preview img, .reference-drag-glyph { display: grid; place-items: center; width: 100%; height: 3.4rem; object-fit: contain; background: var(--deep); border-radius: .2rem; }
+.reference-drag-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .65rem; }
 .references-editor .wb-lanes { grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr)); }
 .references-editor .wb-ref { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; padding: .65rem; border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
 .references-editor .wb-ref > strong { overflow-wrap: anywhere; min-width: 0; }

@@ -97,14 +97,28 @@ test('all six bundled component-owned languages have strict key and placeholder 
     assert.deepEqual(placeholders(catalog.dictionaries[id][key]),placeholders(text),`Placeholder mismatch ${id}:${key}`);
     assert.ok(catalog.dictionaries[id][key].trim(),`Empty translation ${id}:${key}`);
   }
+  const preferenceCalls = new Set(['usePref', 'readPref', 'writePref', 'forgetPref']);
   for (const path of sourceFiles) {
     const source = ts.createSourceFile(path, readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true, path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    const preferenceIdentifiers = new Set<string>();
+    function collectPreferenceIdentifiers(node: ts.Node) {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && preferenceCalls.has(node.expression.text)) {
+        const key = node.arguments[0];
+        if (key && ts.isIdentifier(key)) preferenceIdentifiers.add(key.text);
+      }
+      ts.forEachChild(node, collectPreferenceIdentifiers);
+    }
+    collectPreferenceIdentifiers(source);
     function check(node: ts.Node) {
       const parent=node.parent;
       // Preference identifiers can also live in explicitly named key lists, not only hook arguments.
       const preferenceList=!!parent&&ts.isArrayLiteralExpression(parent)&&ts.isVariableDeclaration(parent.parent)&&ts.isIdentifier(parent.parent.name)&&/PreferenceKeys$/.test(parent.parent.name.text);
+      const preferenceConstant=!!parent&&ts.isVariableDeclaration(parent)&&parent.initializer===node&&
+        ts.isVariableDeclarationList(parent.parent)&&!!(parent.parent.flags&ts.NodeFlags.Const)&&
+        ts.isVariableStatement(parent.parent.parent)&&parent.parent.parent.parent===source&&
+        ts.isIdentifier(parent.name)&&preferenceIdentifiers.has(parent.name.text);
       const contextPreference=path.replaceAll('\\','/').endsWith('/lib/chat.ts')&&!!parent&&ts.isCallExpression(parent)&&ts.isIdentifier(parent.expression)&&['s','n'].includes(parent.expression.text)&&parent.arguments[0]===node;
-      const preferenceKey=contextPreference||preferenceList||(!!parent&&ts.isCallExpression(parent)&&ts.isIdentifier(parent.expression)&&['usePref','readPref','writePref','forgetPref'].includes(parent.expression.text)&&parent.arguments[0]===node);
+      const preferenceKey=contextPreference||preferenceList||preferenceConstant||(!!parent&&ts.isCallExpression(parent)&&ts.isIdentifier(parent.expression)&&preferenceCalls.has(parent.expression.text)&&parent.arguments[0]===node);
       if (ts.isStringLiteral(node) && !preferenceKey && /^(app|setup|studio|neural|installer|downloads|api|projects)\./.test(node.text)) {
         const exists=node.text.endsWith('.')?Object.keys(catalog.dictionaries.en).some(key=>key.startsWith(node.text)):Object.hasOwn(catalog.dictionaries.en,node.text);
         assert.ok(exists, `Missing referenced UI key or prefix ${node.text} in ${path}`);

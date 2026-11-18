@@ -168,9 +168,10 @@ export function ReferencePeople({r,label,onChange,endpoint,root,inputRoot,output
   :<details className="wb-ref-more" data-ref-people onToggle={e=>setOpen(e.currentTarget.open)}><summary>{t('forge.people')}</summary>{body}</details>;
 }
 
-export interface ReferencesPanelProps { manager?:boolean;assignment?:ReactNode;endpoint?:string; root?:string; refs:VideoRef[]; onChange:(refs:VideoRef[])=>void; family:'ltx-2'|'minimax-h3'|'minimax-h3-hyperflow'; /** Video length: LTX reference seconds stay inside it. */ seconds:number; /** Adds references in order (dropped tiles/files, loaded packs); `replace` starts from an empty list. */ onAdd:(adds:RefAdd[],replace?:boolean)=>boolean|void; /** Optional atomic pack application; rows are the final RefMod list. */ onPack?:(adds:RefAdd[],rows:RefMod[],replace:boolean)=>boolean|void; /** ComfyUI input folder: Director packs name files relative to it. */ inputRoot?:string; outputRoot?:string; label:(r:VideoRef,i:number)=>string; /** Append a Director label such as `<Picture 1>` to the prompt. */ onInsert:(label:string)=>void; /** H3 RefMod rows (Director slots 1–8 in order). */ refmods?:RefMod[]; onRefmods?:(rows:RefMod[])=>void; /** Reads the backend's RefMod library on demand. */ library?:()=>Promise<RefModEntry[]>; /** Enables *Create RefMod*: the H3 VAEs, the library files a missing one is filled from, and the upload into the backend input folder. */ refmodCreate?:{vae:string;audioVae:string;vaes?:string[];audioVaes?:string[];modelsDir?:string;upload:(path:string)=>Promise<string>} }
+type AssignedFrames={first:MediaItem|null;last:MediaItem|null;onRemove:(role:'first'|'last')=>void};
+export interface ReferencesPanelProps { manager?:boolean;assignment?:ReactNode;frames?:AssignedFrames;endpoint?:string; root?:string; refs:VideoRef[]; onChange:(refs:VideoRef[])=>void; family:'ltx-2'|'minimax-h3'|'minimax-h3-hyperflow'; /** Video length: LTX reference seconds stay inside it. */ seconds:number; /** Adds references in order (dropped tiles/files, loaded packs); `replace` starts from an empty list. */ onAdd:(adds:RefAdd[],replace?:boolean)=>boolean|void; /** Optional atomic pack application; rows are the final RefMod list. */ onPack?:(adds:RefAdd[],rows:RefMod[],replace:boolean)=>boolean|void; /** ComfyUI input folder: Director packs name files relative to it. */ inputRoot?:string; outputRoot?:string; label:(r:VideoRef,i:number)=>string; /** Append a Director label such as `<Picture 1>` to the prompt. */ onInsert:(label:string)=>void; /** H3 RefMod rows (Director slots 1–8 in order). */ refmods?:RefMod[]; onRefmods?:(rows:RefMod[])=>void; /** Reads the backend's RefMod library on demand. */ library?:()=>Promise<RefModEntry[]>; /** Enables *Create RefMod*: the H3 VAEs, the library files a missing one is filled from, and the upload into the backend input folder. */ refmodCreate?:{vae:string;audioVae:string;vaes?:string[];audioVaes?:string[];modelsDir?:string;upload:(path:string)=>Promise<string>} }
 /** Multi-reference → Video editor in Director lanes; used inside the References overlay. */
-export function ReferencesPanel({manager=false,assignment,endpoint='',root,refs,onChange,family,seconds,label,onAdd,onPack,onInsert,inputRoot,outputRoot,refmods=[],onRefmods,library,refmodCreate}:ReferencesPanelProps){
+export function ReferencesPanel({manager=false,assignment,frames,endpoint='',root,refs,onChange,family,seconds,label,onAdd,onPack,onInsert,inputRoot,outputRoot,refmods=[],onRefmods,library,refmodCreate}:ReferencesPanelProps){
  const {t}=useI18n();const headerTools=useContext(ReferenceHeaderTools);
  const box=useRef<HTMLDivElement>(null);const [error,setError]=useState('');const [hovering,setHovering]=useState(false);
  const [editing,setEditing]=useState<string|null>(null);
@@ -178,7 +179,7 @@ export function ReferencesPanel({manager=false,assignment,endpoint='',root,refs,
  const latest=useRef({refs,onChange});latest.current={refs,onChange};
  // Native webviews deliver OS file drops as paths for the whole window; only drops over this tab add references.
  useEffect(()=>{
-  if(!isTauri())return;
+  if(manager||!isTauri())return;
   let alive=true,unlisten:(()=>void)|undefined;
   const inside=(p:{x:number;y:number})=>{const r=box.current?.getBoundingClientRect(),{x,y}=dropCssPoint(p);return !!r&&Array.from(document.querySelectorAll('dialog[open]')).every(modal=>modal.contains(box.current))&&x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;};
   void getCurrentWebview().onDragDropEvent(e=>{
@@ -187,7 +188,7 @@ export function ReferencesPanel({manager=false,assignment,endpoint='',root,refs,
    if(e.payload.type==='drop'&&inside(e.payload.position))describeMedia(e.payload.paths).then(entries=>add.current(entries.map(itemFromEntry).flatMap(item=>item?[{item}]:[])),err=>setError(String(err)));
   }).then(stop=>{if(alive)unlisten=stop;else stop();},err=>{if(alive)setError(String(err));});
   return()=>{alive=false;unlisten?.();};
- },[]);
+ },[manager]);
  // Ctrl+V of a picture while focus is in this tab: saved into Input first (pastes have no path), then added like a drop.
  // Pasting while focus is on a picture card replaces that card's file and keeps its settings (people boxes belong to the old picture).
  useEffect(()=>{
@@ -266,9 +267,19 @@ export function ReferencesPanel({manager=false,assignment,endpoint='',root,refs,
  const dropOn=(e:React.DragEvent,target:number)=>{const from=dragged.current;dragged.current=-1;if(from<0||from===target||laneOf(refs[from])!==laneOf(refs[target]))return;e.preventDefault();e.stopPropagation();const next=refs.filter((_,m)=>m!==from);next.splice(target,0,refs[from]);onChange(next);};
 
  const summary=(r:VideoRef,n:number)=>r.item.media==='image'?labels[n].startsWith('group-')?t('forge.role.group',{n:labelCharacters(labels[n]).join(' + ')}):t(`forge.role.${labels[n].replace(/-\d+$/,'')}`,{n:labels[n].slice(10)}):`${r.item.media==='video'?t(`studio.run.video.mode.${r.mediaMode}`)+' · ':''}${t('studio.run.video.preview.selection',{start:(r.trimStart??0).toFixed(2),end:(r.trimEnd??r.sourceDuration)?.toFixed(2)??t('studio.run.video.preview.unknown'),seconds:referenceSeconds(r)?.toFixed(2)??t('studio.run.video.preview.unknown')})}`;
+ const frameCards=frames?(['first','last'] as const).flatMap(role=>{
+  const item=frames[role];
+  if(!item)return [];
+  const label=t('studio.run.video.roles.'+role);
+  return [<li key={role} className="reference-frame-card" data-video-role-card={role}>
+   <div className="reference-frame-thumb"><ReferenceThumbnail reference={{item,second:0,strength:1,mediaMode:'video'}}/></div>
+   <strong title={item.path??item.name}><span className="media-mark">{label}</span><span className="reference-card-name">{item.name}</span></strong>
+   <ReferenceActionButton kind="remove" data-video-role-remove={role} label={t('studio.run.video.roles.remove',{role:label})} onClick={()=>frames.onRemove(role)}/>
+  </li>];
+ }):[];
  const renderLane=(lane:Lane)=><section className={`reference-manager-pane reference-manager-${lane}`} data-reference-lane={lane} data-over-limit={lane==='image'&&c.images>9||undefined} aria-label={t(`studio.run.dock.type.${lane}`)}>
-  <header className="reference-pane-heading"><h3>{t(`studio.run.dock.type.${lane}`)}</h3><span className="reference-count">{refs.filter(r=>laneOf(r)===lane).length} / {lane==='image'?9:3}</span></header>
-  <ul className="reference-pane-list">{!refs.some(r=>laneOf(r)===lane)&&<li className="reference-empty">{t('studio.run.video.referencesEmpty')}</li>}{refs.map((r,n)=>laneOf(r)!==lane?null:<li key={referenceKey(r,n)} className={`wb-ref reference-manager-card${reorder.dragging===referenceKey(r,n)?' is-reordering':''}`} data-reference-key={referenceKey(r,n)} data-ref={r.item.name} data-ref-src={r.item.src} data-ref-index={n}
+  <header className="reference-pane-heading"><h3>{t(`studio.run.dock.type.${lane}`)}</h3>{(lane!=='image'||!frameCards.length||refs.some(r=>laneOf(r)===lane))&&<span className="reference-count">{refs.filter(r=>laneOf(r)===lane).length} / {lane==='image'?9:3}</span>}</header>
+  <ul className="reference-pane-list">{lane==='image'&&frameCards}{!(lane==='image'&&frameCards.length)&&!refs.some(r=>laneOf(r)===lane)&&<li className="reference-empty">{t('studio.run.video.referencesEmpty')}</li>}{refs.map((r,n)=>laneOf(r)!==lane?null:<li key={referenceKey(r,n)} className={`wb-ref reference-manager-card${reorder.dragging===referenceKey(r,n)?' is-reordering':''}`} data-reference-key={referenceKey(r,n)} data-ref={r.item.name} data-ref-src={r.item.src} data-ref-index={n}
    onDragStart={e=>{if(!(e.target instanceof Element)||!e.target.closest('.reference-drag-grip,.reference-thumb,strong[draggable]'))return;dragged.current=n;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',r.item.name);}} onDragEnd={()=>{dragged.current=-1;}} onDragOver={e=>{if(dragged.current>=0)e.preventDefault();}} onDrop={e=>dropOn(e,n)}>
    <button type="button" className="reference-drag-grip" draggable={false} {...reorder.handle(referenceKey(r,n))} aria-label={t('studio.run.video.referencesReorder',{name:r.item.name})} title={t('studio.run.video.referencesReorder',{name:r.item.name})}>⠿</button>
    <button type="button" className="reference-thumb" data-edit-reference={referenceKey(r,n)} aria-label={t('studio.run.video.previewReference',{name:r.item.name})} title={t('studio.run.video.previewReference',{name:r.item.name})} draggable onClick={()=>setEditing(referenceKey(r,n))}><ReferenceThumbnail reference={r}/></button>
@@ -306,7 +317,7 @@ export function ReferencesPanel({manager=false,assignment,endpoint='',root,refs,
   {manager?<>
    <div className="reference-assigned-heading"><h3>{t('studio.run.video.referencesAssigned')}</h3><span className={`reference-count${over(c)?' is-over-limit':''}`} title={t('studio.run.video.refMeter',{images:String(c.images),videos:String(c.videos),audio:String(c.audio),files:String(c.images+c.videos+c.audio)})}>{t('studio.run.video.referencesFiles',{count:String(c.images+c.videos+c.audio)})}</span>{headerTools?createPortal(packTools,headerTools):packTools}</div>
    <div className="reference-assignment-slot">{assignment}</div>
-   <div className="reference-feedback">{error?<p className="error-message" role="alert">{error}</p>:status?<p role="status">{status}</p>:over(c)?<p role="alert">{t('studio.run.video.refFull')}</p>:<span>{t(imageOnly?'studio.run.video.refImagesOnlyHyperflow':'studio.run.video.refsDrop')}</span>}</div>
+   <div className="reference-feedback">{error?<p className="error-message" role="alert">{error}</p>:status?<p role="status">{status}</p>:over(c)?<p role="alert">{t('studio.run.video.refFull')}</p>:<span>{t(imageOnly?'studio.run.video.refImagesOnlyHyperflow':'studio.run.video.referencesLayoutHint')}</span>}</div>
    <ReferenceManagerWorkspace images={renderLane('image')} video={renderLane('video')} audio={renderLane('audio')} refmods={managerMods}/>
   </>:<>  {error&&<p className="error-message" role="alert">{error}</p>}
   <div className="wb-ref-toolbar">
