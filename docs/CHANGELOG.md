@@ -4,6 +4,7 @@
 
 - **Disable partner nodes.** **Backend → Startup optimizations** has a new **Node catalogue** switch, checked by default: the owned backend starts with ComfyUI's `--disable-partner-nodes`, so the paid API node models (Kling, ByteDance, Gemini, …) are no longer built into every backend answer. Uncheck it to keep those nodes for your own Comfy tab workflows. Backends whose ComfyUI core does not know the option show a greyed switch with the reason and never receive the argument.
 - **Every backend option is searchable.** Global search (`Ctrl+K`) now finds each option of **Backend → Startup optimizations** and of the **LLM** pane by name - presets, attention backend, each fast feature, VRAM, VAE, the collapsed **Advanced** precision and cache fields, the partner-node switch, **Apply**, provider, endpoint, key, model and test - and opens the right pane and collapsed group for you. Controls that exist only in another mode explain that instead of jumping to nothing.
+- **Weights and numbers can be typed.** The LoRA weight boxes - and every numeric Studio field - no longer erase the keystroke that starts a decimal or a minus sign, so `0.5` and `-0.25` are typeable again. Half-typed text is never mistaken for a value, an out-of-range number is not stored (leaving the box repairs it to the last accepted weight), and clearing a box no longer silently sets the weight to 0.
 
 ## 0.3.2
 

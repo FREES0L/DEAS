@@ -46,6 +46,7 @@ python tools/verify_automatic.py http://127.0.0.1:1420
 python tools/verify_jobs.py http://127.0.0.1:1420
 python tools/verify_downloads.py http://127.0.0.1:1420
 python tools/verify_languages.py http://127.0.0.1:1420
+python tools/verify_lora_strength_input.py
 ```
 
 ## Cross-platform paths

@@ -1,5 +1,37 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Typable number fields (LoRA weights, CFG and friends) — 0.3.3, unreleased
+
+Reported by the owner: a LoRA weight could not be typed. `<input type="number">` reports an empty
+value while the text is an incomplete number (`0.` or `-`), so the previous strictly controlled
+fields either committed that empty string as **0** or pushed the old number back into the box,
+erasing the keystroke that starts a decimal.
+
+New `src/components/NumberField.tsx` owns its text while focused and re-syncs from app state only
+when the user is not editing it. Wired into the Studio LoRA weight boxes, the LoRA sets dialog,
+Beginner LoRAs, the Startup panel's reserve-VRAM and LRU-size fields, and the shared `num()` helper
+(CFG, denoise, durations, shifts, aspect, megapixels, mask grow/blur, …); `num()` passes
+`reject={false}` so its existing clamping setters keep working.
+
+Native acceptance — `tools/verify_lora_strength_input.py` (Chromium 156, isolated Vite, mocked IPC,
+synthetic models, keystroke by keystroke, no backend and no run):
+- before the fix it failed at the first decimal keystroke: `[('0','0'), ('.','0')]` - the "." was
+  replaced by the wrongly committed `0`;
+- after the fix it **PASSES**: the in-progress `0.` stays empty-but-untouched, `0.5` commits as
+  `0.5`, `-0.25` types and commits, typing `50` never stores 50 (blur keeps the last accepted `5`),
+  and clearing the box plus blurring keeps the weight instead of zeroing it.
+
+Fixtures: `src/components/NumberField.test.tsx` (four contracts: incomplete input is neither
+committed nor rewritten; minus/decimal commits; range rejection with blur repair; `reject={false}`
+hand-off to clamping setters; empty text means unset and external updates re-sync an unfocused box)
+and a keystroke-sequence fixture in `LoraSetsDialog.test.tsx`. Full Vitest UI: **2,353 of 2,353**
+passed (134 files) - the wide `num()` swap produced no fixture fallout.
+
+Not evidence: no GPU or model run, and no native Windows WebView2 execution; Chromium and WebView2
+share the number-input semantics this fix depends on, but the Windows runtime check stays open like
+the rest of 0.3.x.
+
+
 ## Startup option "Disable partner nodes" and searchable backend options (0.3.3, unreleased)
 
 Native `startup::tests::partner_nodes_default_on_and_orthogonal_to_presets` covers the saved shape (absent `disablePartnerNodes`

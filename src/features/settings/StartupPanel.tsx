@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { useI18n } from '../../i18n/I18nProvider';
 import { generationActive } from '../../lib/jobs';
+import { NumberField } from '../../components/NumberField';
 
 /** Native `deas-startup.json`: allowlisted ComfyUI launch flags (validated again natively). */
 export interface Startup { preset?:Preset; flags:string[]; fast:string[]; reserveVram?:number; cacheLru?:number; disablePartnerNodes?:boolean }
@@ -55,7 +56,7 @@ export function StartupPanel({root,onRestart}:{root:string;onRestart:()=>void}){
   </fieldset>
   <fieldset className="startup-group" data-startup-group="vram"><legend>{t('startup.vram')}</legend>
    {check('--highvram')}<p className="aio-help">{t('startup.highvramHelp')}</p>
-   <label className="startup-field" data-startup-field="reserveVram"><span>{t('startup.reserveVram')}</span><input type="number" min={0} max={128} step={0.5} value={shown.reserveVram??''} placeholder={t('startup.default')} onChange={e=>{const n=Number(e.target.value);edit({...shown,reserveVram:e.target.value&&n>0&&n<=128?n:undefined});}}/></label>
+   <label className="startup-field" data-startup-field="reserveVram"><span>{t('startup.reserveVram')}</span><NumberField min={0} max={128} step={0.5} text={shown.reserveVram===undefined?'':String(shown.reserveVram)} placeholder={t('startup.default')} onCommit={n=>edit({...shown,reserveVram:n>0&&n<=128?n:undefined})}/></label>
   </fieldset>
   <fieldset className="startup-group" data-startup-partner-nodes><legend>{t('startup.partner')}</legend>
    {/* Saved as absent = the paid API nodes stay disabled; only an explicit false keeps them, and a preset never resets that choice. */}
@@ -67,7 +68,7 @@ export function StartupPanel({root,onRestart}:{root:string;onRestart:()=>void}){
    {select('unet',unets,'unets')}
    {advancedSwitches.map(check)}
    <label className="startup-field" data-startup-field="cache"><span>{t('startup.cache')}</span><select value={cache} onChange={e=>{const v=e.target.value;edit({...shown,flags:shown.flags.filter(f=>!caches.includes(f)).concat(caches.includes(v)?[v]:[]),cacheLru:v==='lru'?shown.cacheLru??16:undefined});}}><option value="">{t('startup.cache.ram')}</option><option value="--cache-classic">{t('startup.cache.classic')}</option><option value="--cache-none">{t('startup.cache.none')}</option><option value="lru">{t('startup.cache.lru')}</option></select></label>
-   {cache==='lru'&&<label className="startup-field" data-startup-field="cacheLru"><span>{t('startup.cacheLru')}</span><input type="number" min={1} max={10000} step={1} value={shown.cacheLru} onChange={e=>{const n=Number(e.target.value);if(Number.isSafeInteger(n)&&n>=1&&n<=10000)edit({...shown,cacheLru:n});}}/></label>}
+   {cache==='lru'&&<label className="startup-field" data-startup-field="cacheLru"><span>{t('startup.cacheLru')}</span><NumberField min={1} max={10000} step={1} text={String(shown.cacheLru)} onCommit={n=>{if(Number.isSafeInteger(n))edit({...shown,cacheLru:n});}}/></label>}
   </details>
   <div className="aio-actions"><button type="button" className="aio-confirm-button" data-startup-apply disabled={!native||busy||JSON.stringify(value)===saved} onClick={()=>void apply()}>{t('startup.apply')}</button></div>
   {message&&<p className="aio-help" role="status">{message}</p>}

@@ -16,6 +16,27 @@ it('edits weights, saves, updates, renames, reloads across remount and deletes a
  expect(screen.getByLabelText('Strength of a.safetensors')).toHaveProperty('value','-0.25');
  fireEvent.click(screen.getByRole('button',{name:'Delete set'}));expect(screen.queryByRole('option',{name:'Look B'})).toBeNull();expect(screen.getByLabelText('Strength of a.safetensors')).toHaveProperty('value','-0.25');
 });
+it('lets a weight be typed one character at a time, including the decimal point and the minus sign',()=>{
+ render(<Host initial={[{name:a.name,strength:1}]}/>);
+ const field=screen.getByLabelText('Strength of a.safetensors') as HTMLInputElement;
+ expect(field.value).toBe('1');
+ field.focus();
+ fireEvent.change(field,{target:{value:'0'}});
+ fireEvent.change(field,{target:{value:''}});            // the browser reports "" while "0." is typed
+ expect(field.value).toBe('');                           // the in-progress text survives the re-render
+ fireEvent.change(field,{target:{value:'0.5'}});
+ fireEvent.blur(field);
+ expect(field.value).toBe('0.5');
+ field.focus();
+ fireEvent.change(field,{target:{value:'-0.25'}});
+ fireEvent.blur(field);
+ expect(field.value).toBe('-0.25');
+ field.focus();
+ fireEvent.change(field,{target:{value:'50'}});          // outside the allowed range
+ fireEvent.blur(field);
+ expect(field.value).toBe('-0.25');                      // repaired instead of stored
+});
+
 it('keeps sets scoped to their model folder and blocks missing files from replacing selections',()=>{
  const view=render(<Host/>);fireEvent.change(screen.getByLabelText('Set name'),{target:{value:'Saved'}});fireEvent.click(screen.getByRole('button',{name:'Save new set'}));view.unmount();
  const other=render(<Host root="/other"/>);expect(screen.queryByRole('option',{name:'Saved'})).toBeNull();other.unmount();

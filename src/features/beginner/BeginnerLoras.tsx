@@ -1,4 +1,5 @@
 import type { LocalModel } from '../../lib/models';
+import { NumberField } from '../../components/NumberField';
 import { useI18n } from '../../i18n/I18nProvider';
 
 export type BeginnerLora={name:string;strength:number};
@@ -20,7 +21,7 @@ export function BeginnerLoras({models,selected,onChange,onRefresh,disabled=false
     {models.filter(m=>!selected.some(l=>l.name===m.name)).map(m=><option key={m.path||m.name} value={m.name}>{m.name.replace(/\.safetensors$/i,'')}</option>)}
    </select></label>
    {!models.length&&!reason&&<p>{t('beginner.loras.empty')}</p>}
-   <ul>{selected.map(l=><li key={l.name}><span title={l.name}>{l.name.replace(/\.safetensors$/i,'')}</span><label><span>{t('beginner.loras.strength')}</span><input type="number" aria-label={t('studio.run.strength',{name:l.name})} value={l.strength} min={-10} max={10} step={0.05} disabled={disabled} onChange={e=>{const value=Number(e.target.value);if(e.target.value!==''&&Number.isFinite(value)&&Math.abs(value)<=10)onChange(selected.map(x=>x.name===l.name?{...x,strength:value}:x));}}/></label><button type="button" disabled={disabled} aria-label={t('beginner.loras.remove',{name:l.name})} onClick={()=>onChange(selected.filter(x=>x.name!==l.name))}>×</button></li>)}</ul>
+   <ul>{selected.map(l=><li key={l.name}><span title={l.name}>{l.name.replace(/\.safetensors$/i,'')}</span><label><span>{t('beginner.loras.strength')}</span><NumberField aria-label={t('studio.run.strength',{name:l.name})} text={String(l.strength)} onCommit={value=>onChange(selected.map(x=>x.name===l.name?{...x,strength:value}:x))} min={-10} max={10} step={0.05} disabled={disabled}/></label><button type="button" disabled={disabled} aria-label={t('beginner.loras.remove',{name:l.name})} onClick={()=>onChange(selected.filter(x=>x.name!==l.name))}>×</button></li>)}</ul>
    <button type="button" className="beginner-loras-refresh" disabled={disabled} onClick={onRefresh}>{t('beginner.refresh')}</button>
   </div>
  </details>;

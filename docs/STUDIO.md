@@ -118,6 +118,13 @@ the grip beside a row to reorder it. Holding near the list's top/bottom edge scr
 that list automatically. On a focused grip, Up/Down arrows move the entry; Escape
 during a drag restores its starting order without closing the popup.
 
+Weight boxes are typed like text, not rewritten after every keystroke: an incomplete number
+(`0.` or `-`) stays on the screen while you finish it, `0.5` and `-0.25` can be typed one key at a
+time, and a value outside -10 to 10 is never stored - leaving the box repairs it to the last
+accepted weight instead. Clearing a box does not zero the weight. The same rule covers the other
+numeric Studio fields (CFG, denoise, durations, shifts): what you have typed so far is not a value
+until it is one, and fields whose own setter clamps keep clamping.
+
 Image/video execution accepts at most eight active LoRAs. Larger selections and saved sets remain intact; disable entries until eight or fewer are active to enable Run.
 
 The power icon enables/disables a selected entry. Disabled entries are greyed out

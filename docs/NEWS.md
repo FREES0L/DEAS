@@ -2,6 +2,12 @@
 
 ## 0.3.3
 
+### Weights are typeable again
+
+The LoRA weight boxes (and the other numeric Studio fields) no longer erase the keystroke that starts a decimal or a
+minus sign, so `0.5` and `-0.25` can be typed key by key. Half-typed text is never treated as a value, an impossible
+number is not stored, and clearing a box no longer silently sets a weight to 0.
+
 ### Backend options you can find
 
 Global search (`Ctrl+K`) now lists the backend's options one by one: presets, attention backend, the fast features,
