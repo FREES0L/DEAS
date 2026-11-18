@@ -1,5 +1,34 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.3 (published)
+
+Published [v0.3.3](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.3) from source commit `476d2e9b211d0c423eda03d46a5412b4387ce3e7` (annotated tag object `7910a8c8344144c2f18e7d7190ec632b30913fe1`, pushed to both remotes; the release pins `targetCommitish` to the same commit). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries; the build ran locally with `build-linux.sh --release` on a clean tree whose tip was the release-prep commit, and the release was published draft-first: every server asset `digest` matched the local hash before it was made **Latest** (not a prerelease). The four assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four byte-identical to the staged set.
+
+- `deas-linux-amd64`: `a2bb25a67a21bb3925dd81844248274e183c388ea26abc09e9312583d601036c` (38,964,424 bytes)
+- `deas.exe`: `21e9480ed8f3c42fb854e7a7c745a5cb127356f8c1071377caa111f150e2b875` (42,321,408 bytes)
+- `SHA256SUMS`: `c4da70bc0f979924453f031fc4fb96de7c9550af3ef7f3e68940c0e808b80eda`
+- `BUILD-MANIFEST.json`: `529fb261cc45f7780144939f3a04e0285a3dd3b9ed3ebd744151621eca3b23e9`
+
+Provenance:
+- Toolchain: `rustc 1.97.0 (2d8144b78 2026-07-07)`, Node `v26.13.1`, targets `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`, unsigned.
+- Source tree: `81fb8a3921b180185d6482113b06aa4126e6a570`.
+- Linux binary: glibc floor `2.39` (from `objdump -T`), `ldd` reports no missing libraries.
+- Both binaries embed this build's `dist/assets/index-CanNW1r6.js` (byte-searched in each).
+- No NSIS installer, deb or AppImage were produced (no Windows bundler here; the four-asset set is the established fallback).
+- The MSVC cross-build emitted the benign `libcmt.amd64.pdb` missing-debug-info linker warning, recorded in the manifest notes.
+- The loose launcher `artifacts/deas-linux-amd64` is byte-identical to the published Linux binary (`cmp`), as staged by the release build itself.
+
+Gates, run fresh on the release content:
+- `npm run typecheck` clean; 167 core checks passed.
+- Vitest UI: **2,353 of 2,353** passed (134 files) - including the new `NumberField` contracts and the keystroke-by-keystroke LoRA weight fixture.
+- `git diff --check` and `cargo fmt --check` clean.
+- Strict Clippy clean: Linux `--release --lib --bins`, plus `cargo xwin check` and `cargo xwin clippy --all-targets -- -D warnings` for `x86_64-pc-windows-msvc`.
+- Serial native suite with a private `TMPDIR`: **1,099 passed, 2 failed, 80 ignored**. The two failures are the documented shutdown-grace fixtures (`backend::tests::no_console_python_shutdown_pipe_wakes_asyncio_and_runs_finally`, `backend::tests::stop_allows_python_finally_and_drains_shutdown_output_before_restarting`); both pass as the `backend::tests` group (32 passed, 1 ignored).
+- New native keyboard probe `tools/verify_lora_strength_input.py` (Chromium 156, isolated Vite, mocked IPC, synthetic models): **PASS** on the released tree. It failed on the pre-fix code with `[('0','0'), ('.','0')]`, i.e. the decimal point was replaced by a wrongly committed `0`.
+
+Not evidence: no real GPU or model run, and no native Windows execution - the first real Windows launch of `deas.exe` is the runtime acceptance test, which is also what issue #39 still needs from its reporters.
+
+
 ## Typable number fields (LoRA weights, CFG and friends) (0.3.3)
 
 Reported by the owner: a LoRA weight could not be typed. `<input type="number">` reports an empty
