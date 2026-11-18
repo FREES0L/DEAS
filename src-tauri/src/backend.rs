@@ -699,7 +699,10 @@ impl Lifecycle {
     pub(crate) fn start(&self, approved: Approved) -> Result<Status, String> {
         approved.validate()?;
         if let Some(expected) = &approved.plan.hardware {
-            let actual = crate::install::torch_profile::probe()?;
+            let actual = match approved.plan.request.backend {
+                Backend::Amd => crate::amd::probe_amd()?,
+                _ => crate::install::torch_profile::probe()?,
+            };
             if actual.uuid != expected.uuid
                 || actual.compute_capability != expected.compute_capability
                 || actual.driver_version != expected.driver_version
@@ -798,6 +801,8 @@ impl Lifecycle {
             Backend::Nvidia => {
                 command.args(["--cuda-device", "0"]);
             }
+            // ROCm Torch selects the device through HIP_VISIBLE_DEVICES, set with the environment below.
+            Backend::Amd => {}
             _ => return Err("Unsupported backend".into()),
         }
         let (folder_args, model_roots) = crate::settings::backend_configuration(root)?;
