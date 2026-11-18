@@ -1,6 +1,6 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
-## Typable number fields (LoRA weights, CFG and friends) — 0.3.3, unreleased
+## Typable number fields (LoRA weights, CFG and friends) (0.3.3)
 
 Reported by the owner: a LoRA weight could not be typed. `<input type="number">` reports an empty
 value while the text is an incomplete number (`0.` or `-`), so the previous strictly controlled
@@ -32,7 +32,7 @@ share the number-input semantics this fix depends on, but the Windows runtime ch
 the rest of 0.3.x.
 
 
-## Startup option "Disable partner nodes" and searchable backend options (0.3.3, unreleased)
+## Startup option "Disable partner nodes" and searchable backend options (0.3.3)
 
 Native `startup::tests::partner_nodes_default_on_and_orthogonal_to_presets` covers the saved shape (absent `disablePartnerNodes`
 = disabled, explicit `false` = keep the paid API nodes), that a preset switch never overwrites the choice, and that the launch

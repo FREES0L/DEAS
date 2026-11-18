@@ -13,7 +13,7 @@ A Rust/Tauri desktop workstation for ComfyUI and DaSiWa tools: generation, model
 | **Media Analysis** | Reads a picture's tags with local ONNX taggers, shows how it was made, describes it with your vision LLM, and picks exact frames from videos |
 | **Library** | Finds and downloads models and LoRAs from Hugging Face and Civitai, with shared Studio Favorites, bulk family organization and model move/delete; [contextual checks](docs/STUDIO.md#contextual-model-checks) explain compatibility, missing components and backend availability |
 | **TVE** | Upscales and remasters your videos on your own card — upscale model, NVIDIA RTX refine, frame generation |
-| **Backend** | Installs and runs the entire ComfyUI environment for you — CPU, NVIDIA, or AMD (Linux) |
+| **Backend** | Installs and runs the entire ComfyUI environment for you — CPU, NVIDIA, or AMD (Linux), with startup options you can reach through `Ctrl+K` |
 | **Media & Monitoring** | Every result kept with its full generation metadata for one-click reuse; live CPU/RAM/GPU telemetry |
 | **Comfy** | The original workflow editor, one tab away when you need it |
 
