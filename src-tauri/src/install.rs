@@ -490,7 +490,7 @@ impl Engine {
             || uuid::Uuid::parse_str(&plan.id).is_err()
             || !plan.can_execute
             || !plan.unsupported_options.is_empty()
-            || !matches!(plan.request.backend, Backend::Cpu | Backend::Nvidia)
+            || !matches!(plan.request.backend, Backend::Cpu | Backend::Nvidia | Backend::Amd)
             || plan.request.features.iter().any(|id| {
                 !["installer", "director", "forge", "refmods", "continuity"].contains(&id.as_str())
             })
@@ -2989,7 +2989,17 @@ mod tests {
     #[test]
     fn every_unsupported_selection_blocks_execution() {
         let tmp = scratch();
-        for backend in [Backend::Amd, Backend::Intel] {
+        // AMD executes on a host whose Radeon the probe admits; elsewhere it must block.
+        #[cfg(target_os = "linux")]
+        let amd_host = crate::amd::probe_amd().is_ok();
+        #[cfg(not(target_os = "linux"))]
+        let amd_host = false;
+        let unsupported: &[Backend] = if amd_host {
+            &[Backend::Intel]
+        } else {
+            &[Backend::Amd, Backend::Intel]
+        };
+        for backend in unsupported.iter().cloned() {
             let engine = Engine::default();
             let mut request = request(tmp.path());
             request.backend = backend;

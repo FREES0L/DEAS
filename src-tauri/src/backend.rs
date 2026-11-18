@@ -240,7 +240,7 @@ impl Approved {
     }
     pub(crate) fn validate(&self) -> Result<(), String> {
         if !self.plan.can_execute
-            || !matches!(self.plan.request.backend, Backend::Cpu | Backend::Nvidia)
+            || !matches!(self.plan.request.backend, Backend::Cpu | Backend::Nvidia | Backend::Amd)
         {
             return Err("Approved backend is not executable".into());
         }
@@ -705,7 +705,7 @@ impl Lifecycle {
                 || actual.driver_version != expected.driver_version
             {
                 return Err(
-                    "NVIDIA hardware/driver changed; use Backend → Re-run installation".into(),
+                    "GPU hardware/driver changed; use Backend → Re-run installation".into(),
                 );
             }
         }
