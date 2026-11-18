@@ -1,5 +1,33 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.2 (published)
+
+Published [v0.3.2](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.2) from source commit `3ea1d4801756a9707c735ca3e99a7d45f5e61e96` (annotated tag object `37757f87e1098509c02ff8d073fa4b800e0fb64f`, pushed to both remotes). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries. The release was built with `build-linux.sh --release` in a detached `git worktree` at the release commit. A concurrent session's uncommitted "Disable partner nodes" work in the main checkout was deliberately left out. The release was published draft-first: every server `digest` matched the local hash before it was made latest (not a prerelease). The assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four files identical to the staged set.
+
+- `deas-linux-amd64`: `4bc079dda102ff2d5ce7d8720d247cd08f969173981e0edf33e56a888b464a32` (38,955,208 bytes)
+- `deas.exe`: `4bc11c88a55bbc67ace570f775616bf822e2d5d045281b7ab492ece2a7080bcc` (42,308,096 bytes)
+- `SHA256SUMS`: `87729dc25767f908f8e96c4c7079b11f67cc96787506352ce196f9e37dd53eb7`
+- `BUILD-MANIFEST.json`: `e5e0449aab9ebbf91bebe38b407e46ec5e2df4be38bcd8dabc9750c0eb224444`
+
+Provenance:
+- Toolchain: `rustc 1.97.0 (2d8144b78 2026-07-07)`, Node `v26.13.1`, targets `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`, unsigned.
+- Source tree: `c7f1c941eeeaa2a11879c83199ad280c9e55905a`.
+- Linux binary: glibc floor `2.39` (from `objdump -T`), `ldd` reports no missing libraries.
+- Both binaries embed this build's `dist/assets/index-AuvfgaVs.js`.
+- No NSIS installer, deb or AppImage were produced.
+- The loose launcher `artifacts/deas-linux-amd64` was replaced by rename with the published binary (same SHA-256).
+
+Gates, run fresh on the release content (code identical to `3ea1d48`, which adds only docs):
+- `npm run typecheck` clean; 167 core checks passed.
+- Vitest UI: 2,342 of 2,343 passed (133 files). `Workbench.h3Continuity.v2v` failed once under load and passed alone (3/3).
+- `git diff --check` and `cargo fmt --check` clean.
+- Strict Clippy clean: Linux `--release --lib --bins` and `--all-targets`, Windows `cargo xwin check`/`clippy --all-targets -- -D warnings`.
+- Serial native suite with a private `TMPDIR` under the home directory: **1,097 passed, 4 failed, 80 ignored**.
+  - Failures: the two documented shutdown-grace fixtures, plus `video_post::tests::forced_worker_death_also_terminates_initial_source_probe` and `native_probe_bounds_timeout_output_stderr_and_failed_exit` (reported `VIDEO_TOOL_MISSING` only inside the full run). All four pass as the `backend::tests` and `video_post::tests` groups (48 passed, 2 ignored).
+  - With `TMPDIR=/tmp` an additional 18 settings/install/job-output/llm fixtures fail. The settings guard rejects the world-writable `/tmp` ancestor, which is an environment effect, not a regression; they pass with the private `TMPDIR`.
+
+Not evidence: no real GPU or model run, no native Windows execution, no live WebView2/WebKitGTK acceptance of the PR #41 drag-and-drop or Library move/delete.
+
 ## Release 0.3.1 (published)
 
 Published [v0.3.1](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.1) from source commit `7e9ce337e8673915b08a67613b0a0ddf08592fb8` (annotated tag object `eaf0b0693112c537f03bd950b5188bb800b14756`, pushed to both remotes; still an ancestor of `main`). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries: the release was built locally in a detached `git worktree` checked out at the tag — deliberately kept away from the concurrent PR #41 work in the main checkout — and published manually (draft, digest-verified, then un-drafted, latest, not a prerelease, pinned to the built commit).
