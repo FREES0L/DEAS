@@ -33,6 +33,8 @@ const PACKAGES: [(&str, &str); 2] = [
 
 /// Named presets, resolved against the installed hardware at every start (a new GPU re-resolves them).
 const PRESETS: [&str; 3] = ["speed", "compatibility", "off"];
+/// ComfyUI's paid API node catalogue. Current cores only; the probe below decides.
+const PARTNER_FLAG: &str = "--disable-partner-nodes";
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -50,6 +52,23 @@ pub struct Startup {
     /// `--cache-lru <N>` node results; exclusive with the cache flags.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_lru: Option<u32>,
+    /// `--disable-partner-nodes`. Absent means ON: DEAS recipes never use ComfyUI's paid API
+    /// nodes, and on a 2026 core those classes are about half of every `object_info` response.
+    /// Orthogonal to the presets, which only cover performance flags.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disable_partner_nodes: Option<bool>,
+}
+
+/// Absent or true disables them; only an explicit false keeps the paid API nodes.
+pub fn partner_nodes_disabled(startup: &Startup) -> bool {
+    startup.disable_partner_nodes != Some(false)
+}
+
+/// Does the installed ComfyUI core know the flag? Text probe of its own argparse file — no
+/// Python is started. Older cores must not receive a flag their parser would reject.
+pub fn partner_flag_supported(root: &Path) -> bool {
+    std::fs::read_to_string(root.join("ComfyUI").join("comfy").join("cli_args.py"))
+        .is_ok_and(|text| text.contains(&format!("\"{PARTNER_FLAG}\"")))
 }
 
 /// NVIDIA compute capability of the installed plan, `None` for CPU or unknown hardware.
@@ -75,7 +94,11 @@ pub fn preset(name: &str, plan: Option<&crate::install::Plan>) -> Startup {
 
 fn resolve(s: Startup, plan: Option<&crate::install::Plan>) -> Startup {
     match &s.preset {
-        Some(name) => preset(name, plan),
+        // A preset chooses performance flags only; the partner-node choice is saved separately.
+        Some(name) => Startup {
+            disable_partner_nodes: s.disable_partner_nodes,
+            ..preset(name, plan)
+        },
         None => s,
     }
 }
@@ -86,6 +109,7 @@ fn validate(s: &Startup, root: &Path) -> Result<(), String> {
             || *s
                 != (Startup {
                     preset: s.preset.clone(),
+                    disable_partner_nodes: s.disable_partner_nodes,
                     ..Default::default()
                 })
         {
@@ -215,6 +239,9 @@ pub fn args(root: &Path, plan: Option<&crate::install::Plan>) -> Result<Vec<Stri
     if let Some(n) = s.cache_lru {
         args.extend(["--cache-lru".into(), n.to_string()]);
     }
+    if partner_nodes_disabled(&s) && partner_flag_supported(root) {
+        args.push(PARTNER_FLAG.into());
+    }
     Ok(args)
 }
 
@@ -224,6 +251,8 @@ pub struct StartupState {
     packages: Vec<&'static str>,
     /// Each preset resolved for the open environment's hardware, for display.
     presets: std::collections::BTreeMap<&'static str, Startup>,
+    /// Whether this core accepts `--disable-partner-nodes`; false greys the switch out.
+    partner_flag: bool,
 }
 
 #[tauri::command]
@@ -245,6 +274,7 @@ pub fn native_startup_read(
             .iter()
             .map(|name| (*name, preset(name, plan.as_ref())))
             .collect(),
+        partner_flag: partner_flag_supported(&path),
     })
 }
 
@@ -310,6 +340,75 @@ mod tests {
                 "8"
             ]
         );
+    }
+
+    #[test]
+    fn partner_nodes_default_on_and_orthogonal_to_presets() {
+        let root = tempfile::tempdir().unwrap();
+        // No core yet: never pass the flag, so an old backend cannot die on an unknown argument.
+        assert!(partner_nodes_disabled(&Startup::default()));
+        assert!(!partner_flag_supported(root.path()));
+        assert!(args(root.path(), None).unwrap().is_empty());
+        let core = root.path().join("ComfyUI").join("comfy");
+        std::fs::create_dir_all(&core).unwrap();
+        std::fs::write(
+            core.join("cli_args.py"),
+            "parser.add_argument(\"--disable-partner-nodes\", action=\"store_true\")\n",
+        )
+        .unwrap();
+        assert!(partner_flag_supported(root.path()));
+        // Absent settings already mean disabled: DEAS recipes never use those nodes.
+        assert_eq!(args(root.path(), None).unwrap(), [PARTNER_FLAG]);
+        for name in PRESETS {
+            let saved = Startup {
+                preset: Some(name.into()),
+                ..Default::default()
+            };
+            assert_eq!(write(root.path(), saved.clone()).unwrap(), saved);
+            assert_eq!(args(root.path(), None).unwrap(), [PARTNER_FLAG]);
+            let kept = Startup {
+                preset: Some(name.into()),
+                disable_partner_nodes: Some(false),
+                ..Default::default()
+            };
+            assert_eq!(write(root.path(), kept.clone()).unwrap(), kept);
+            assert!(args(root.path(), None).unwrap().is_empty());
+        }
+        // Custom options still combine with an explicit choice.
+        let custom = Startup {
+            flags: vec!["--highvram".into()],
+            cache_lru: Some(4),
+            disable_partner_nodes: Some(true),
+            ..Default::default()
+        };
+        write(root.path(), custom.clone()).unwrap();
+        assert_eq!(read(root.path()).unwrap(), custom);
+        assert_eq!(
+            args(root.path(), None).unwrap(),
+            ["--highvram", "--cache-lru", "4", PARTNER_FLAG]
+        );
+        // A preset still rejects every other explicit option; only the partner choice rides along.
+        assert!(write(
+            root.path(),
+            Startup {
+                preset: Some("speed".into()),
+                fast: vec!["autotune".into()],
+                disable_partner_nodes: Some(true),
+                ..Default::default()
+            }
+        )
+        .is_err());
+        // A core downgraded to a revision without the option starts without the flag.
+        std::fs::write(
+            core.join("cli_args.py"),
+            "parser.add_argument(\"--offline\")\n",
+        )
+        .unwrap();
+        assert!(!partner_flag_supported(root.path()));
+        assert!(args(root.path(), None)
+            .unwrap()
+            .iter()
+            .all(|a| a != PARTNER_FLAG));
     }
 
     #[test]

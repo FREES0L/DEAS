@@ -212,6 +212,10 @@
   "startup.vram": "VRAM",
   "startup.flag.highvram": "Modelle im VRAM halten (High VRAM)",
   "startup.reserveVram": "VRAM für andere Software reservieren (GB)",
+  "startup.partner": "Node-Katalog",
+  "startup.partnerNodes": "Partner-Nodes deaktivieren (bezahlte API-Modelle)",
+  "startup.partnerHelp": "Entfernt ComfyUis bezahlte API-Nodes (Kling, ByteDance, Gemini, Tripo …) aus dem Backend. DEAS nutzt sie nie; Start, Backend-Prüfung und Rezept-Suche antworten schneller, weil pro Anfrage deutlich weniger Node-Definitionen erzeugt werden. Eigene Workflows im Comfy-Tab verlieren diese Nodes. Wirkt beim nächsten Backend-Start.",
+  "startup.partnerUnsupported": "Dafür braucht das Backend einen neueren ComfyUI-Kern; unter Backend aktualisieren und neu öffnen.",
   "startup.vae": "VAE",
   "startup.vaes.fp32-vae": "fp32 (behebt schwarze Bilder)",
   "startup.vaes.bf16-vae": "bf16",
@@ -296,5 +300,6 @@
   "search.section.filters": "Filter",
   "search.section.panes": "Backend-Panels",
   "search.reason.lines": "Keine Logzeilen passen zum aktuellen Filter",
-  "search.reason.backendRunning": "Nur solange das Backend gestoppt ist"
+  "search.reason.backendRunning": "Nur solange das Backend gestoppt ist",
+  "search.reason.startupCacheLru": "Erscheint nur, wenn der Node-Ergebnis-Cache auf LRU mit fester Größe gestellt ist."
 }

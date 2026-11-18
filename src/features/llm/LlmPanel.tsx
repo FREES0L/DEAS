@@ -93,16 +93,16 @@ function EnvironmentLlmPanel({ root }: { root: string }) {
     <p className="aio-help">{t('llm.help')}</p>
     {!config ? <p className="aio-help">{t(!native ? 'llm.native' : !root ? 'llm.root' : error ? 'llm.unavailable' : 'llm.loading')}</p> : <>
       <fieldset disabled={busy} className="llm-fields">
-        <label className="startup-field"><span>{t('llm.provider')}</span><select value={config.provider} onChange={e => { const provider = e.target.value as LlmProvider; const { apiKey, ...rest } = config; edit(provider === 'openai' && apiKey ? { ...rest, provider, apiKey } : { ...rest, provider }); }}>
+        <label className="startup-field" data-llm-field="provider"><span>{t('llm.provider')}</span><select value={config.provider} onChange={e => { const provider = e.target.value as LlmProvider; const { apiKey, ...rest } = config; edit(provider === 'openai' && apiKey ? { ...rest, provider, apiKey } : { ...rest, provider }); }}>
           <option value="local">{t('llm.provider.local')}</option><option value="ollama">{t('llm.provider.ollama')}</option><option value="openai">{t('llm.provider.openai')}</option>
         </select></label>
-        {remote && <label className="startup-field"><span>{t('llm.baseUrl')}</span><input type="url" value={config.baseUrl} onChange={e => edit({ ...config, baseUrl: e.target.value })} /></label>}
-        {config.provider === 'openai' && <label className="startup-field"><span>{t('llm.apiKey')}</span><input type="password" autoComplete="off" value={config.apiKey ?? ''} onChange={e => { const apiKey = e.target.value.trim(); const { apiKey: _, ...rest } = config; edit(apiKey ? { ...rest, apiKey } : rest); }} /></label>}
+        {remote && <label className="startup-field" data-llm-field="baseUrl"><span>{t('llm.baseUrl')}</span><input type="url" value={config.baseUrl} onChange={e => edit({ ...config, baseUrl: e.target.value })} /></label>}
+        {config.provider === 'openai' && <label className="startup-field" data-llm-field="apiKey"><span>{t('llm.apiKey')}</span><input type="password" autoComplete="off" value={config.apiKey ?? ''} onChange={e => { const apiKey = e.target.value.trim(); const { apiKey: _, ...rest } = config; edit(apiKey ? { ...rest, apiKey } : rest); }} /></label>}
       </fieldset>
-      <div className="aio-actions"><button type="button" className="aio-confirm-button" disabled={busy || !dirty || !valid} onClick={() => void request('save')}>{t('llm.save')}</button><button type="button" disabled={busy || dirty} onClick={() => void request('refresh')}>{t('llm.refresh')}</button></div>
+      <div className="aio-actions"><button type="button" className="aio-confirm-button" data-llm-action="save" disabled={busy || !dirty || !valid} onClick={() => void request('save')}>{t('llm.save')}</button><button type="button" data-llm-action="refresh" disabled={busy || dirty} onClick={() => void request('refresh')}>{t('llm.refresh')}</button></div>
       {dirty && <p className="aio-help">{t('llm.dirty')}</p>}
       {dirty && !valid && <p className="aio-help">{t('llm.invalid')}</p>}
-      <label className="startup-field"><span>{t('llm.test.model')}</span><select value={selected} disabled={busy || dirty} onChange={e => { setSelected(e.target.value); setResult(null); }}>
+      <label className="startup-field" data-llm-field="testModel"><span>{t('llm.test.model')}</span><select value={selected} disabled={busy || dirty} onChange={e => { setSelected(e.target.value); setResult(null); }}>
         <option value="">{t('llm.test.choose')}</option>
         {(['local', 'ollama', 'openai'] as const).map(provider => {
           const group = models.filter(value => value.provider === provider);
@@ -113,8 +113,8 @@ function EnvironmentLlmPanel({ root }: { root: string }) {
       </select></label>
       {!busy && !dirty && models.length === 0 && <p className="aio-help">{t('llm.models.empty')}</p>}
       {warnings.map((warning, index) => <p key={index} role="status" className="aio-help llm-warning">{warning}</p>)}
-      <label className="startup-field"><span>{t('llm.test.prompt')}</span><input value={prompt} placeholder={t('llm.test.defaultPrompt')} disabled={busy} onChange={e => { setPrompt(e.target.value); setResult(null); }} /></label>
-      <div className="aio-actions"><button type="button" disabled={busy || dirty || !model} onClick={() => void request('test')}>{t('llm.test')}</button></div>
+      <label className="startup-field" data-llm-field="testPrompt"><span>{t('llm.test.prompt')}</span><input value={prompt} placeholder={t('llm.test.defaultPrompt')} disabled={busy} onChange={e => { setPrompt(e.target.value); setResult(null); }} /></label>
+      <div className="aio-actions"><button type="button" data-llm-action="test" disabled={busy || dirty || !model} onClick={() => void request('test')}>{t('llm.test')}</button></div>
       {busy && <p role="status" className="aio-help">{t('llm.busy')}</p>}
     </>}
     {message && <p role="status" className="aio-help">{t('llm.saved')}</p>}

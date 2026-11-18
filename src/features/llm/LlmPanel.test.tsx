@@ -2,7 +2,8 @@ import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { I18nProvider } from '../../i18n/I18nProvider';
+import { bundledCatalog, I18nProvider } from '../../i18n/I18nProvider';
+import { matchEntries, searchIndex } from '../../lib/search';
 import { defaultLlmConfig, discoverLlmModels, generateLlm, type LlmConfig, type LlmModels, type LlmResult } from '../../lib/llm';
 import { LlmPanel } from './LlmPanel';
 
@@ -37,6 +38,20 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
+
+it('indexes every LLM option so global search finds each backend option', async () => {
+  const { container } = render(ui());
+  await ready();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Provider' }), { target: { value: 'openai' } });
+  const entries = searchIndex.filter(e => e.view === 'backend' && e.panel === 'llm');
+  expect(entries.length).toBeGreaterThanOrEqual(6);
+  for (const entry of entries) expect(container.querySelector(entry.target), `${entry.label} ${entry.target}`).toBeTruthy();
+  const text = (key: string) => bundledCatalog.dictionaries.en[key];
+  const hit = (query: string) => matchEntries(searchIndex, query, text, searchIndex.length).map(e => e.target);
+  expect(hit('openai compatible')).toContain('[data-llm-field="baseUrl"]');
+  expect(hit('api key')).toContain('[data-llm-field="apiKey"]');
+  expect(hit('ollama')).toContain('[data-llm-field="provider"]');
+});
 
 it('only reads config and all models on mount, with no global model/path/tuning controls or implicit selection', async () => {
   render(ui()); await ready();

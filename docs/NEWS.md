@@ -1,6 +1,23 @@
 # News
 
+## 0.3.3
+
+### Backend options you can find
+
+Global search (`Ctrl+K`) now lists the backend's options one by one: presets, attention backend, the fast features,
+VRAM and VAE choices, the collapsed **Advanced** precision and cache fields, the partner-node switch, **Apply**, and
+the LLM provider, endpoint, key, model and test controls. A hit opens the right Backend pane and any collapsed group,
+and a control that only exists in another mode says so.
+
+### Fewer nodes for the backend to answer
+
+**Backend → Startup optimizations** has a new **Disable partner nodes** switch, checked by default. DEAS never uses
+ComfyUI's paid API models (Kling, ByteDance, Gemini, Tripo, …), and they make up almost half of the node list a
+backend answers with, so startup, **Test**/**Inspect** and recipe discovery respond sooner. Uncheck it to keep those
+nodes for workflows you build yourself in the Comfy tab. Older backends show the switch greyed out with the reason.
+
 ## 0.3.2
+
 
 ### Drop media straight into H3 References
 

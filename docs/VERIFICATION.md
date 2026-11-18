@@ -1,5 +1,46 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Startup option "Disable partner nodes" and searchable backend options (0.3.3, unreleased)
+
+Native `startup::tests::partner_nodes_default_on_and_orthogonal_to_presets` covers the saved shape (absent `disablePartnerNodes`
+= disabled, explicit `false` = keep the paid API nodes), that a preset switch never overwrites the choice, and that the launch
+argument appears only when the installed core declares it. The five `startup::` fixtures passed serially (`5 passed`).
+
+Owned-environment A/B, run on throwaway CPU-mode backends of the owned `deas-environment` core (`05e878f`, its own venv,
+loopback ports 8391-8394, started as transient systemd units with a memory cap and stopped immediately after each measurement;
+the DEAS app and no pre-existing service was started or stopped, no model was loaded):
+
+| | node classes | `object_info` body | partner classes | warm `object_info` | warm `system_stats` |
+|---|---|---|---|---|---|
+| without the flag | 1,391 | 2,828,303 B | 355 = 1,332,780 B (47.1 %) | 0.38-0.58 s | 1,067 B, ~1.3 ms |
+| with `--disable-partner-nodes` | 1,028 | 1,466,472 B | 0 | 0.32-0.36 s | - |
+
+The core accepted the flag and started normally, and the same share was measured in a #39 reporter's real Windows
+`object_info` dump (1,390 classes, 2,824,418 B). The payload and class-count reduction is measured; the saving on this fast
+host is small, and an end-to-end startup-time gain on a slow machine is not claimed - that remains #39's open Windows
+confirmation.
+
+Search coverage: 25 new `searchIndex` entries (19 Backend › Startup optimizations, 6 LLM) point at new stable anchors
+(`[data-startup-presets]`, `[data-startup-field=…]`, `[data-startup-fast=…]`, `[data-startup-check=…]`,
+`[data-startup-advanced]`, `[data-startup-apply]`, `[data-llm-field=…]`, `[data-llm-action=…]`). Fixtures mount the real
+panels and assert every one of those entries resolves inside the rendered panel, that queries such as *autotune*,
+*black images*, *reserve vram*, *classic cache*, *partner nodes* and *openai compatible* hit the intended anchor, and that
+the new `search.reason.startupCacheLru` reason exists in all six locales. Global search stays read-only: it opens the
+Backend pane and collapsed **Advanced** group but never changes a mode to make a field exist.
+
+Gates on this content: `npm run typecheck` clean; 167 core checks (locale parity, literal JSX) passed; Vitest UI
+**2,348 of 2,348** passed (133 files, one earlier run had the documented `Workbench.h3Continuity.ref2v` load flake fail once
+and pass 6/6 in isolation); `git diff --check` and `cargo fmt --check` clean; strict Clippy clean on Linux
+(`--release --lib --bins`) and Windows MSVC (`cargo xwin check`/`clippy --all-targets -- -D warnings`); serial native suite
+**1,099 passed, 2 failed, 80 ignored**, the two failures being the documented shutdown-grace fixtures
+(`no_console_python_shutdown_pipe_wakes_asyncio_and_runs_finally`,
+`stop_allows_python_finally_and_drains_shutdown_output_before_restarting`), which pass in isolation.
+
+Not evidence: no GPU or model run, no Windows runtime, no live WebView2/WebKitGTK acceptance.
+`tools/verify_settings_selectors.py` (native WebKitGTK) was tried and is red on the untouched base tree as well
+(header `language-select` chevron expectation), so it counted neither for nor against this change.
+
+
 ## Release 0.3.2 (published)
 
 Published [v0.3.2](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.2) from source commit `3ea1d4801756a9707c735ca3e99a7d45f5e61e96` (annotated tag object `37757f87e1098509c02ff8d073fa4b800e0fb64f`, pushed to both remotes). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries. The release was built with `build-linux.sh --release` in a detached `git worktree` at the release commit. A concurrent session's uncommitted "Disable partner nodes" work in the main checkout was deliberately left out. The release was published draft-first: every server `digest` matched the local hash before it was made latest (not a prerelease). The assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four files identical to the staged set.

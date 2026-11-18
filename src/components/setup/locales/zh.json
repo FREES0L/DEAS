@@ -212,6 +212,10 @@
   "startup.vram": "显存",
   "startup.flag.highvram": "将模型保留在显存中（high VRAM）",
   "startup.reserveVram": "为其他软件保留显存（GB）",
+  "startup.partner": "节点目录",
+  "startup.partnerNodes": "禁用合作节点（付费 API 模型）",
+  "startup.partnerHelp": "从后端移除 ComfyUI 的付费 API 节点（Kling、ByteDance、Gemini、Tripo 等）。DEAS 从不使用它们；由于每次请求需要构建的节点定义大幅减少，启动、后端检查和配方检索能更快响应。你在 Comfy 标签中自行搭建的工作流将失去这些节点。下次启动后端时生效。",
+  "startup.partnerUnsupported": "此选项需要后端中有较新的 ComfyUI 核心；请在“后端”中更新后重新打开。",
   "startup.vae": "VAE",
   "startup.vaes.fp32-vae": "fp32（修复黑图）",
   "startup.vaes.bf16-vae": "bf16",
@@ -296,5 +300,6 @@
   "search.section.filters": "筛选",
   "search.section.panes": "后端面板",
   "search.reason.lines": "没有匹配当前筛选的日志行",
-  "search.reason.backendRunning": "仅在后端已停止时"
+  "search.reason.backendRunning": "仅在后端已停止时",
+  "search.reason.startupCacheLru": "仅当节点结果缓存设置为固定大小 LRU 时才会出现。"
 }

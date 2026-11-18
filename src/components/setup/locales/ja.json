@@ -212,6 +212,10 @@
   "startup.vram": "VRAM",
   "startup.flag.highvram": "モデルを VRAM に保持（high VRAM）",
   "startup.reserveVram": "他のソフト用に VRAM を確保（GB）",
+  "startup.partner": "ノードカタログ",
+  "startup.partnerNodes": "パートナーノード（有料APIモデル）を無効化",
+  "startup.partnerHelp": "ComfyUI の有料 API ノード（Kling、ByteDance、Gemini、Tripo など）をバックエンドから削除します。DEAS はこれを使わず、リクエストごとに構築されるノード定義が大幅に減るため、起動、バックエンド検査、レシピ検出がより速く応答します。Comfy タブで自分で構築するワークフローではこれらのノードが使えなくなります。次回のバックエンド起動から適用されます。",
+  "startup.partnerUnsupported": "このオプションにはバックエンド内のより新しい ComfyUI コアが必要です。Backend で更新してから開き直してください。",
   "startup.vae": "VAE",
   "startup.vaes.fp32-vae": "fp32（黒い画像を修正）",
   "startup.vaes.bf16-vae": "bf16",
@@ -296,5 +300,6 @@
   "search.section.filters": "フィルター",
   "search.section.panes": "バックエンドパネル",
   "search.reason.lines": "現在のフィルターに一致するログ行がありません",
-  "search.reason.backendRunning": "バックエンド停止中のみ"
+  "search.reason.backendRunning": "バックエンド停止中のみ",
+  "search.reason.startupCacheLru": "ノード結果キャッシュが固定サイズの LRU に設定されているときにのみ表示されます。"
 }

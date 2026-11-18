@@ -212,6 +212,10 @@
   "startup.vram": "VRAM",
   "startup.flag.highvram": "Modelleri VRAM'de tut (high VRAM)",
   "startup.reserveVram": "Diğer yazılımlar için VRAM ayır (GB)",
+  "startup.partner": "Düğüm kataloğu",
+  "startup.partnerNodes": "Ortak düğümleri devre dışı bırak (ücretli API modelleri)",
+  "startup.partnerHelp": "ComfyUI'nin ücretli API düğümlerini (Kling, ByteDance, Gemini, Tripo…) arka uçtan kaldırır. DEAS bunları hiç kullanmaz; her istekte çok daha az düğüm tanımı oluşturulduğu için açılış, arka uç denetimi ve tarif keşfi daha hızlı yanıt verir. Comfy sekmesinde kendiniz kurduğunuz akışlar bu düğümleri kaybeder. Bir sonraki arka uç başlatmada geçerli olur.",
+  "startup.partnerUnsupported": "Bu seçenek arka uçta daha yeni bir ComfyUI çekirdeği ister; Backend altından güncelleyip yeniden açın.",
   "startup.vae": "VAE",
   "startup.vaes.fp32-vae": "fp32 (siyah görüntüleri düzeltir)",
   "startup.vaes.bf16-vae": "bf16",
@@ -296,5 +300,6 @@
   "search.section.filters": "Filtreler",
   "search.section.panes": "Backend panelleri",
   "search.reason.lines": "Mevcut filtreyle eşleşen log satırı yok",
-  "search.reason.backendRunning": "Yalnızca arka uç durdurulmuşken"
+  "search.reason.backendRunning": "Yalnızca arka uç durdurulmuşken",
+  "search.reason.startupCacheLru": "Yalnızca düğüm sonucu önbelleği sabit boyutlu LRU olarak ayarlandığında görünür."
 }

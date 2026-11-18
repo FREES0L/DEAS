@@ -212,6 +212,10 @@
   "startup.vram": "VRAM",
   "startup.flag.highvram": "Garder les modèles en VRAM (high VRAM)",
   "startup.reserveVram": "Réserver de la VRAM pour d’autres logiciels (Go)",
+  "startup.partner": "Catalogue de nœuds",
+  "startup.partnerNodes": "Désactiver les nœuds partenaires (modèles API payants)",
+  "startup.partnerHelp": "Retire les nœuds API payants de ComfyUI (Kling, ByteDance, Gemini, Tripo, …) du backend. DEAS ne les utilise jamais ; le démarrage, l’inspection du backend et la recherche de recettes répondent plus vite, car beaucoup moins de définitions de nœuds sont construites à chaque requête. Les workflows que vous créez dans l’onglet Comfy perdent ces nœuds. Effectif au prochain démarrage du backend.",
+  "startup.partnerUnsupported": "Cette option demande un noyau ComfyUI plus récent dans le backend ; mettez-le à jour sous Backend, puis rouvrez.",
   "startup.vae": "VAE",
   "startup.vaes.fp32-vae": "fp32 (corrige les images noires)",
   "startup.vaes.bf16-vae": "bf16",
@@ -296,5 +300,6 @@
   "search.section.filters": "Filtres",
   "search.section.panes": "Panneaux du backend",
   "search.reason.lines": "Aucune ligne de log ne correspond au filtre actuel",
-  "search.reason.backendRunning": "Seulement quand le backend est arrêté"
+  "search.reason.backendRunning": "Seulement quand le backend est arrêté",
+  "search.reason.startupCacheLru": "Apparaît uniquement quand le cache des résultats des nœuds est réglé sur LRU avec une taille fixe."
 }
