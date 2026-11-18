@@ -1,5 +1,27 @@
 # News
 
+## 0.3.2
+
+### Drop media straight into H3 References
+
+Drag a Media tile or a file from your file manager into the **H3 Video** or **H3 Image Edit** References popup.
+DEAS asks which role the file should take. Once an image reference is present, more images are added
+automatically. First and last frames appear as cards under **Images**. Assignments come back after a restart.
+Thanks to @AzuliarTHP ([#41](https://github.com/darksidewalker/DEAS/pull/41)).
+
+### Library: manage model files, open Civitai pages
+
+- Right-click a card, or use **Bulk select**, to move models to another folder in the same category or delete them
+  after confirmation.
+- The file path opens its folder. **View on Civitai** opens the matched version, and the creator name opens their
+  profile. Mature models open on civitai.red, because civitai.com now only shows a "moved" notice for them.
+- **Fetch** can save a missing cover next to the model (off by default). Existing covers are kept.
+
+### Enhanced video preview
+
+Each enhanced preview now plays to the end before the newest sampling preview starts, and holds its last frame
+while waiting.
+
 ## 0.3.1
 
 ### Backend startup on slow machines
