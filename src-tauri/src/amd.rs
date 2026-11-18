@@ -232,10 +232,24 @@ fn bracket_pci_id(tail: &str) -> Option<&str> {
 
 #[cfg(target_os = "linux")]
 pub fn amdgpu_driver_version() -> Result<String, String> {
-    std::fs::read_to_string("/sys/module/amdgpu/version")
-        .map(|version| version.trim().to_owned())
-        .map_err(|_| "AMD_DRIVER: the amdgpu kernel module is not loaded; install the ROCm driver and re-plan".into())
+    amdgpu_driver_version_in(std::path::Path::new("/sys/module/amdgpu"))
 }
+
+/// AMD's DKMS driver publishes `version`; the in-tree amdgpu that distributions
+/// such as Arch ship has none. A loaded module without it reports a fixed
+/// `in-kernel` rather than the kernel release, because backend start compares
+/// this string with the plan and a kernel update must not force a reinstall.
+#[cfg(any(target_os = "linux", test))]
+fn amdgpu_driver_version_in(module: &std::path::Path) -> Result<String, String> {
+    match std::fs::read_to_string(module.join("version")) {
+        Ok(version) => Ok(version.trim().to_owned()),
+        Err(_) if module.is_dir() => Ok(AMDGPU_IN_KERNEL.into()),
+        Err(_) => Err("AMD_DRIVER: the amdgpu kernel module is not loaded; install the ROCm driver and re-plan".into()),
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+const AMDGPU_IN_KERNEL: &str = "in-kernel";
 
 /// shortcut: Linux only for now — AMD's ROCm wheels resolve for Windows in a
 /// `uv --dry-run` (2026-11-08) but there is no Windows AMD runtime acceptance
@@ -333,6 +347,25 @@ mod tests {
         assert!(parse_amd_lspci(&format!("{amd}\n{amd}"), "6.16.13").is_err());
         assert!(parse_amd_lspci(intel, "6.16.13").is_err());
         assert!(parse_amd_lspci("", "6.16.13").is_err());
+    }
+
+    #[test]
+    fn in_tree_amdgpu_without_version_file_is_in_kernel() {
+        let sys = tempfile::tempdir().unwrap();
+        let module = sys.path().join("amdgpu");
+        assert!(amdgpu_driver_version_in(&module).is_err());
+        std::fs::create_dir(&module).unwrap();
+        assert_eq!(amdgpu_driver_version_in(&module).unwrap(), "in-kernel");
+        std::fs::write(module.join("version"), "6.16.13\n").unwrap();
+        assert_eq!(amdgpu_driver_version_in(&module).unwrap(), "6.16.13");
+    }
+
+    #[test]
+    fn lspci_r9700_line_resolves_gfx1201() {
+        let line = "0a:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. [AMD/ATI] Navi 48 [Radeon AI PRO R9700] [1002:7551] (rev c0)";
+        let hardware = parse_amd_lspci(line, "in-kernel").unwrap();
+        assert_eq!(hardware.uuid, "AMD-1002:7551");
+        assert_eq!(hardware.compute_capability, "gfx1201");
     }
 
     #[test]
