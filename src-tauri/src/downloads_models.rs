@@ -1671,6 +1671,8 @@ mod tests {
             ("Stable-Diffusion", "checkpoints", "checkpoints"),
             ("Lora", "loras", "loras"),
             ("loras", "loras", "loras"),
+            ("StableDiffusion", "checkpoints", "checkpoints"),
+            ("DiffusionModels", "diffusion_models", "diffusionModels"),
         ] {
             let (root, path) = family_fixture(folder);
             let models = scan(root.path()).unwrap();

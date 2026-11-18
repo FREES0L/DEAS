@@ -24,13 +24,31 @@ pub(crate) const MODEL_FOLDERS: [&str; 17] = [
     "hypernetworks",
 ];
 
-/// Disk folder names and backend namespaces are separate (SwarmUI uses two aliases).
+/// Disk folder names and backend namespaces are separate. SwarmUI uses two aliases;
+/// StabilityMatrix's shared model folder (its `SharedFolderType` names) uses the rest.
+const MODEL_FOLDER_ALIASES: [(&str, &str); 14] = [
+    ("Stable-Diffusion", "checkpoints"),
+    ("StableDiffusion", "checkpoints"),
+    ("Lora", "loras"),
+    ("DiffusionModels", "diffusion_models"),
+    ("VAE", "vae"),
+    ("ApproxVAE", "vae_approx"),
+    ("TextEncoders", "text_encoders"),
+    ("ClipVision", "clip_vision"),
+    ("ControlNet", "controlnet"),
+    ("ESRGAN", "upscale_models"),
+    ("AudioEncoders", "audio_encoders"),
+    ("Embeddings", "embeddings"),
+    ("StyleModels", "style_models"),
+    ("Hypernetwork", "hypernetworks"),
+];
+
 pub(crate) fn model_folder_category(name: &str) -> Option<&'static str> {
-    match name {
-        "Stable-Diffusion" => Some("checkpoints"),
-        "Lora" => Some("loras"),
-        _ => MODEL_FOLDERS.iter().copied().find(|folder| *folder == name),
-    }
+    MODEL_FOLDER_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map(|(_, category)| *category)
+        .or_else(|| MODEL_FOLDERS.iter().copied().find(|folder| *folder == name))
 }
 
 /// Every configured root contains category folders; aliases share backend namespaces.
@@ -39,11 +57,11 @@ pub(crate) fn model_locations(root: &Path) -> Vec<(&'static str, PathBuf)> {
         .iter()
         .map(|&category| (category, root.join(category)))
         .collect();
-    for alias in ["Stable-Diffusion", "Lora"] {
+    for (alias, category) in MODEL_FOLDER_ALIASES {
         let path = root.join(alias);
         if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir() || m.file_type().is_symlink())
         {
-            locations.push((model_folder_category(alias).unwrap(), path));
+            locations.push((category, path));
         }
     }
     locations
