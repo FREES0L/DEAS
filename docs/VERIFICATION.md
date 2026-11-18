@@ -1,5 +1,22 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.1 (published)
+
+Published [v0.3.1](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.1) from source commit `7e9ce337e8673915b08a67613b0a0ddf08592fb8` (annotated tag object `eaf0b0693112c537f03bd950b5188bb800b14756`, pushed to both remotes; still an ancestor of `main`). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries: the release was built locally in a detached `git worktree` checked out at the tag — deliberately kept away from the concurrent PR #41 work in the main checkout — and published manually (draft, digest-verified, then un-drafted, latest, not a prerelease, pinned to the built commit).
+
+Assets, hashed in one step from the staged set, then read back from GitHub (every server `digest` matched the local hash) and re-downloaded into a new directory where `sha256sum -c SHA256SUMS` passed and `cmp` reported both binaries byte-identical to the staged set:
+
+- `deas-linux-amd64` — `12f7d60f5f3151352bfc82dd44a233867b47fc8368f458a42747da9162cebc27` (38,826,248 bytes)
+- `deas.exe` — `080d11d35b3c7b899015622ff274be44670026907cf2e1fc3a2aec85d5f371a6` (42,117,120 bytes)
+- `SHA256SUMS` — `eb60abb9525953cc8b0a36206ac7a949c83c689b3b26889f413d1e7a22a65a70`
+- `BUILD-MANIFEST.json` — `d9cbde2056a850b2d39340cc012c5dbcc909964075bbb342c52e915e619f15d9`
+
+Provenance: `rustc 1.97.0 (2d8144b78 2026-07-07)`, Node `v26.13.1`, targets `x86_64-unknown-linux-gnu` and `x86_64-pc-windows-msvc`, unsigned, source tree `b596381413ad830feb71075837b661cc199456d4`. The Linux glibc floor `2.39` was derived from the binary itself (`objdump -T`), `ldd` reported zero missing libraries, and both binaries embed this build's `dist/assets/index-WtxM2p7e.js`. No NSIS installer, deb or AppImage: this host has neither `makensis` nor `patchelf`. The loose launcher path `artifacts/deas-linux-amd64` was replaced by rename with the hash-verified release binary (identical SHA-256 to the published asset).
+
+Gates re-run fresh on the release source commit: `npm run typecheck` clean, 167 core checks, 2,335 Vitest UI checks in 132 files, `git diff --check` clean, `cargo fmt --check` clean after the whitespace-only commit `7e9ce33` (rustfmt of the pre-existing H3 Dials catalog guard and its catalog assertion, no behaviour change), strict Clippy for Linux (`--release --lib --bins -- -D warnings`) clean, and the Windows-target gates (`cargo xwin check --locked --all-targets`, `cargo xwin clippy --locked --all-targets -- -D warnings`) clean. The serial native suite recorded **1,094 passed, 2 failed, 80 ignored**: the two previously documented shutdown-grace fixtures (`no_console_python_shutdown_pipe_wakes_asyncio_and_runs_finally`, `stop_allows_python_finally_and_drains_shutdown_output_before_restarting`) fail inside a full serial run (bounded scope and unbounded CPU alike) but pass repeatedly in isolation and pass as the whole `backend::tests` group (32 passed, 1 ignored); the readiness fix touched only `supervise()`, and both already failed on the pre-fix baseline — pre-existing suite-order deadline sensitivity, not a regression from [#39](https://github.com/darksidewalker/DEAS/issues/39).
+
+Not evidence: no real GPU or model run, no native Windows execution, no native WebKitGTK acceptance. Windows runtime confirmation of [#39](https://github.com/darksidewalker/DEAS/issues/39) stays open — the published `deas.exe` is the build the two reporters are asked to test.
+
 ## Library, enhanced preview and H3 References
 
 The frontend build, 2,343 UI tests and 467 Chromium layout checks passed. Core
