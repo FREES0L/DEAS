@@ -87,8 +87,9 @@ it('indexes every Startup optimization so global search finds each backend optio
  const hit=(query:string)=>matchEntries(searchIndex,query,text,searchIndex.length).map(e=>e.target);
  for(const [query,anchor] of [['speed+','[data-startup-presets]'],['attention backend','[data-startup-field="attention"]'],['autotune','[data-startup-fast="autotune"]'],['fp8','[data-startup-fast="fp8_matrix_mult"]'],['keep models in vram','[data-startup-check="highvram"]'],['reserve vram','[data-startup-field="reserveVram"]'],['black images','[data-startup-field="vae"]'],['diffusion model precision','[data-startup-field="unet"]'],['fp16 text encoder','[data-startup-check="fp16-text-enc"]'],['classic cache','[data-startup-field="cache"]'],['partner nodes','.startup-panel [data-startup-partner-nodes]']] as const)expect(hit(query),query).toContain(anchor);
  expect(hit('apply options')).toContain('[data-startup-apply]');
- const cacheLru=searchIndex.find(e=>e.target==='[data-startup-field="cacheLru"]')!;
- for(const locale of ['en','de','fr','ja','tr','zh'])expect(bundledCatalog.dictionaries[locale][cacheLru.reason],locale).toBeTypeOf('string');
+ const reason=searchIndex.find(e=>e.target==='[data-startup-field="cacheLru"]')!.reason!;
+ expect(reason).toBe('search.reason.startupCacheLru');
+ for(const locale of ['en','de','fr','ja','tr','zh'])expect(bundledCatalog.dictionaries[locale][reason],locale).toBeTypeOf('string');
  });
 
 it('is reachable from global search at its own anchor', ()=>{
