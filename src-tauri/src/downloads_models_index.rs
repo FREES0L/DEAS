@@ -3,7 +3,8 @@ use super::*;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-const SCHEMA: u32 = 1;
+// 2: snapshots record their scan time, and video covers count as previews.
+const SCHEMA: u32 = 2;
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 static REFRESH: Mutex<()> = Mutex::new(());
 
@@ -74,10 +75,14 @@ struct Index {
     detector: String,
     roots: Vec<PathBuf>,
     records: Vec<Record>,
+    /// When the walk that produced this snapshot started; absent in older snapshots.
+    #[serde(default)]
+    scanned_at: Option<u64>,
 }
 
 pub(super) const PREVIEW_EXTENSIONS: &[&str] =
-    &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
+    // Images first: a video sibling (LoRA Manager saves .mp4 covers) is shown as a still frame.
+    &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "mp4", "webm"];
 
 const MAX_DISPLAY_PREVIEW: u64 = 32 * 1024 * 1024;
 
@@ -397,6 +402,63 @@ pub fn update_many(directory: &Path, paths: &[PathBuf]) -> Result<(), String> {
     Ok(())
 }
 
+fn now_nanos() -> Option<u64> {
+    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?;
+    u64::try_from(since.as_nanos()).ok()
+}
+
+/// Whether a model folder changed after the snapshot's walk began. Downloaders such as
+/// LoRA Manager add, move and rename models and their previews outside DEAS; each of
+/// those bumps the containing directory's mtime, so a directory-only walk (no file
+/// reads) is enough to tell a cached listing is stale.
+fn folders_changed(roots: &[PathBuf], scanned_at: Option<u64>) -> bool {
+    let Some(scanned_at) = scanned_at else {
+        return true;
+    };
+    let since = std::time::UNIX_EPOCH + std::time::Duration::from_nanos(scanned_at);
+    let mut stack: Vec<(PathBuf, usize)> = roots.iter().map(|root| (root.clone(), 0)).collect();
+    for root in roots {
+        stack.extend(
+            crate::settings::model_locations(root)
+                .into_iter()
+                .map(|(_, base)| (base, 1)),
+        );
+    }
+    let mut budget = MAX_WALK;
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(meta) = std::fs::metadata(&dir) else {
+            continue;
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        if meta.modified().is_ok_and(|modified| modified >= since) {
+            return true;
+        }
+        // Depth 0 is a root: its category folders were queued above.
+        if depth == 0 || depth > MAX_DEPTH {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if budget == 0 {
+                return false;
+            }
+            budget -= 1;
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            if std::fs::metadata(&path).is_ok_and(|m| m.is_dir()) {
+                stack.push((path, depth + 1));
+            }
+        }
+    }
+    false
+}
+
 fn publish(path: &Path, index: &Index) -> Result<(), String> {
     let bytes = serde_json::to_vec(index).map_err(|e| e.to_string())?;
     if bytes.len() as u64 > MAX_BYTES {
@@ -433,7 +495,7 @@ pub fn load(
     }
     let path = index_path(directory, &roots)?;
     if !refresh {
-        if let Some(index) = read(&path, &roots) {
+        if let Some(index) = read(&path, &roots).filter(|i| !folders_changed(&i.roots, i.scanned_at)) {
             return Ok(payload(index));
         }
     }
@@ -443,10 +505,13 @@ pub fn load(
     let mut previous = read(&path, &roots);
     // Coalesce simultaneous cold starts from Library and Studio.
     if !refresh {
-        if let Some(index) = previous.take() {
+        if let Some(index) = previous.take_if(|i| !folders_changed(&i.roots, i.scanned_at)) {
             return Ok(payload(index));
         }
     }
+    // Back-dated: file timestamps come from a coarse clock that can trail now() by a tick,
+    // and a change racing the walk's start must still count as newer than the snapshot.
+    let scanned_at = now_nanos().map(|n| n.saturating_sub(50_000_000));
     let old: HashMap<_, _> = previous
         .into_iter()
         .flat_map(|i| i.records)
@@ -551,6 +616,7 @@ pub fn load(
         detector: env!("CARGO_PKG_VERSION").into(),
         roots,
         records,
+        scanned_at,
     };
     if publish(&path, &index).is_err() {
         crate::logs::push(crate::logs::Source::Deas, "WARN: Library index operation=save snapshot could not be persisted; current listing remains available");
@@ -639,9 +705,13 @@ mod tests {
         for ext in ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "JpG"] {
             let image = folder.join(format!("a.preview.{ext}"));
             std::fs::write(&image, b"synthetic image fixture").unwrap();
-            assert!(load(&cache, vec![root.clone()], false).unwrap()[0]
-                .local_preview
-                .is_none());
+            // A preview written by another tool changes the folder, so a plain load sees it.
+            assert_eq!(
+                load(&cache, vec![root.clone()], false).unwrap()[0]
+                    .local_preview
+                    .as_deref(),
+                image.to_str()
+            );
             let refreshed = load(&cache, vec![root.clone()], true).unwrap();
             assert_eq!(refreshed[0].local_preview.as_deref(), image.to_str());
             assert_eq!(
@@ -663,6 +733,46 @@ mod tests {
             model.to_str().unwrap(),
             dir.path().join("x.jpg").to_str().unwrap()
         ));
+    }
+
+    #[test]
+    fn plain_load_follows_models_moved_or_added_outside_deas() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        let nested = root.join("Lora/style/old");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("a.safetensors"), b"fixture").unwrap();
+        std::fs::write(nested.join("a.webp"), b"synthetic image fixture").unwrap();
+        let cache = dir.path().join("cache");
+        let paths = |models: Vec<SnapshotModel>| {
+            let mut v: Vec<_> = models
+                .into_iter()
+                .map(|m| (m.path, m.local_preview))
+                .collect();
+            v.sort();
+            v
+        };
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 1);
+        // Unchanged folders serve the snapshot as-is.
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 1);
+        let moved = root.join("Lora/style");
+        std::fs::rename(nested.join("a.safetensors"), moved.join("a.safetensors")).unwrap();
+        std::fs::rename(nested.join("a.webp"), moved.join("a.webp")).unwrap();
+        std::fs::write(moved.join("b.safetensors"), b"fixture").unwrap();
+        let s = |p: std::path::PathBuf| p.to_string_lossy().into_owned();
+        assert_eq!(
+            paths(load(&cache, vec![root.clone()], false).unwrap()),
+            vec![
+                (s(moved.join("a.safetensors")), Some(s(moved.join("a.webp")))),
+                (s(moved.join("b.safetensors")), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn snapshot_without_scan_time_is_refreshed_once() {
+        assert!(folders_changed(&[PathBuf::from("/nonexistent-root")], None));
+        assert!(!folders_changed(&[PathBuf::from("/nonexistent-root")], now_nanos()));
     }
 
     #[test]
@@ -706,15 +816,20 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         let file = folder.join("a.pt");
         std::fs::write(&file, b"original").unwrap();
+        // Scans are back-dated 50ms; let the fixture's folder writes fall before that.
+        std::thread::sleep(std::time::Duration::from_millis(60));
         let cache = dir.path().join("index");
         let first = load(&cache, vec![root.clone()], false).unwrap();
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].name.replace('\\', "/"), "group/nested/a.pt");
         std::fs::write(&file, b"changed-size").unwrap();
-        std::fs::write(folder.join("b.pt"), b"new").unwrap();
         let saved = load(&cache, vec![root.clone()], false).unwrap();
         assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0].size, 8); // A warm load does not walk or inspect changed files.
+        // Rewriting a file in place leaves its folder alone: a warm load does not inspect it.
+        assert_eq!(saved[0].size, 8);
+        std::fs::write(folder.join("b.pt"), b"new").unwrap();
+        // A new file changes its folder, so a warm load walks again.
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 2);
         let updated = load(&cache, vec![root.clone()], true).unwrap();
         assert_eq!(updated.len(), 2);
         assert_eq!(
@@ -741,7 +856,8 @@ mod tests {
             Some("sdxl")
         );
         std::fs::remove_file(&file).unwrap();
-        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 2);
+        // Removing a file changes its folder: the warm load drops it without an explicit refresh.
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 1);
         assert_eq!(load(&cache, vec![root], true).unwrap().len(), 1);
         assert_eq!(std::fs::read(folder.join("b.pt")).unwrap(), b"new");
     }

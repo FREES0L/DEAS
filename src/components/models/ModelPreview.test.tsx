@@ -23,3 +23,12 @@ it('retries a previously failed cover after explicit refresh without changing pr
  expect(view.container.querySelector('img')).toHaveProperty('src','asset:///previews/a.jpg?deas_preview=123');
  fireEvent.error(view.container.querySelector('img')!);expect(view.container.querySelector('img')).toHaveProperty('src','https://example.invalid/a.png');
 });
+it('shows a video cover as a native still frame and falls back when extraction fails',async()=>{
+ vi.mocked(invoke).mockImplementation(async(cmd:string,args?:unknown)=>cmd==='native_media_reference_thumbnail'?((args as {path:string}).path.endsWith('ok.mp4')?'/cache/still.png':Promise.reject(new Error('ffmpeg'))):undefined);
+ const view=render(<ModelPreview model={{...model,localPreview:'/previews/ok.mp4'}} fallback={<span>No preview</span>}/>);
+ expect(screen.getByText('No preview')).toBeTruthy();
+ await vi.waitFor(()=>expect(view.container.querySelector('img')).toHaveProperty('src','asset:///cache/still.png'));
+ expect(vi.mocked(invoke)).toHaveBeenCalledWith('native_media_reference_thumbnail',{path:'/previews/ok.mp4',seconds:0});
+ view.rerender(<ModelPreview model={{...model,localPreview:'/previews/bad.mp4'}} fallback={<span>No preview</span>}/>);
+ await vi.waitFor(()=>expect(view.container.querySelector('img')).toHaveProperty('src','https://example.invalid/a.png'));
+});
